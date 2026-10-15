@@ -58,6 +58,7 @@ jobs:
           repository: DeftKing/nodejs-win7
           ref: main
           path: runtime/nodejs-win7
+          lfs: true
           persist-credentials: false
 
       - name: Check out PythonWin7 toolchain
