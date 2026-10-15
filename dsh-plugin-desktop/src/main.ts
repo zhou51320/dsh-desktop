@@ -1689,9 +1689,10 @@ async function start(): Promise<void> {
         prepared.patches,
         async (hostCtx) => {
           profileBoot.prepare(hostCtx)
-          // Keep Host imports and browser bundle discovery on the same public
-          // profile-overlay resolver used by packaged Electron.
-          hostCtx.loader.internal = undefined
+          // Keep the Node internal module resolver available.  Recent upstream
+          // plugin metadata reads use ModuleLoader.fromInternal() to resolve
+          // exported icons/locales; clearing it makes every plugin appear
+          // broken even though the profile overlay hooks are installed below.
           generation.bindHost(hostCtx)
           hostCtx.effect(
             () => async () => { await flushProfilePreferencesWrites() },

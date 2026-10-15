@@ -124,9 +124,10 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
       prepared.patches,
       async (hostCtx) => {
         profileBoot.prepare(hostCtx)
-        // Keep Host imports and browser bundle discovery on the same public
-        // profile-overlay resolver used by packaged Electron.
-        hostCtx.loader.internal = undefined
+        // Keep the Node internal module resolver available. Recent upstream
+        // plugin metadata reads use ModuleLoader.fromInternal() to resolve
+        // exported icons/locales; clearing it makes every plugin appear
+        // broken even though the profile overlay hooks are installed below.
         bindHost(hostCtx)
         hostCtx.effect(() => () => logSink.close(), 'dsh-plugin-desktop: Host log sink')
         hostCtx.effect(
