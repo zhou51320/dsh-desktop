@@ -103,7 +103,7 @@ jobs:
         shell: pwsh
         run: |
           cd ${{ matrix.workspace }}\dist\win7
-          Get-ChildItem -Recurse -File | ForEach-Object {
+          Get-ChildItem -Recurse -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object {
             $relative = Resolve-Path -Relative $_.FullName
             $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
             "$hash  $relative" | Out-File -FilePath SHA256SUMS.txt -Append -Encoding utf8
