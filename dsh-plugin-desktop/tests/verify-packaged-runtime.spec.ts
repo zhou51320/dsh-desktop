@@ -794,10 +794,13 @@ describe('packaged desktop runtime verification', () => {
 
     expect(run).toHaveBeenCalledTimes(5)
     for (const [executable, args, environment] of run.mock.calls) {
-      expect(executable).toBe(resolvePackagedExecutablePath(runtimeContext))
+      const expectedExecutable = process.platform === 'win32'
+        ? '\\build\\resources\\runtime\\x64\\primary-runtime\\dependencies\\node\\bin\\node.exe'
+        : resolvePackagedExecutablePath(runtimeContext)
+      expect(executable).toBe(expectedExecutable)
       expect(args).toContain('--expose-internals')
       expect(args.some(arg => arg.includes('app.asar'))).toBe(true)
-      expect(environment.ELECTRON_RUN_AS_NODE).toBe('1')
+      expect(environment.ELECTRON_RUN_AS_NODE).toBe(process.platform === 'win32' ? undefined : '1')
       expect(environment.DSH_HOME).toEqual(expect.any(String))
     }
   })
