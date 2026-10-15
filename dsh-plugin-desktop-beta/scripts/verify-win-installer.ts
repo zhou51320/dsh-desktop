@@ -32,6 +32,8 @@ export interface WindowsInstallerVerificationOptions {
   readonly desktopRoot: string
   /** Product version embedded in the expected artifact name. */
   readonly version: string
+  /** Optional custom dist directory containing generated artifacts. */
+  readonly distDir?: string
 }
 
 function readVersion(desktopRoot: string): string {
@@ -73,9 +75,13 @@ export function assertPortableExecutable(path: string, label: string): void {
 
 function defaultOptions(): WindowsInstallerVerificationOptions {
   const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const distDir = process.env.DSH_DIST_DIR !== undefined && process.env.DSH_DIST_DIR.length > 0
+    ? resolve(process.env.DSH_DIST_DIR)
+    : undefined
   return {
     desktopRoot,
     version: readVersion(desktopRoot),
+    ...(distDir === undefined ? {} : { distDir }),
   }
 }
 
@@ -87,7 +93,7 @@ function defaultOptions(): WindowsInstallerVerificationOptions {
 export function verifyWindowsInstaller(
   options: WindowsInstallerVerificationOptions = defaultOptions(),
 ): WindowsInstallerArtifacts {
-  const distDir = join(options.desktopRoot, 'dist')
+  const distDir = options.distDir ?? join(options.desktopRoot, 'dist')
   const installerPath = join(
     distDir,
     `DSH-Desktop-Beta-${options.version}-x64-Setup.exe`,

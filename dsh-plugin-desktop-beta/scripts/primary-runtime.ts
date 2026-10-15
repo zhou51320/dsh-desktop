@@ -2,7 +2,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, cpSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, cpSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -66,6 +66,17 @@ function isArtifact(value: unknown): value is PrimaryRuntimeArtifact {
 
 function isDistributionMap(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every(version => typeof version === 'string' && version.length > 0)
+}
+
+function findWindowsNodeExecutable(root: string): string {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isFile() && entry.name.toLowerCase() === 'node.exe') return path
+    if (entry.isDirectory()) {
+      try { return findWindowsNodeExecutable(path) } catch { /* continue */ }
+    }
+  }
+  throw new Error(`primary runtime: custom Windows Node archive contains no node.exe: ${root}`)
 }
 
 /**
@@ -148,12 +159,17 @@ export async function downloadPrimaryRuntimeAsset(url: string, sha256: string, c
 export async function downloadNodeRuntime(target: PrimaryRuntimeTarget, destination: string, cache: string, lock: PrimaryRuntimeLock): Promise<void> {
   const artifact = lock.targets[target]
   const filename = `node-v${lock.nodeVersion}-${artifact.nodeArchive}`
-  const archive = await downloadPrimaryRuntimeAsset(`https://nodejs.org/dist/v${lock.nodeVersion}/${filename}`, artifact.nodeSha256, cache)
+  const customArchive = target === 'win-x64' ? process.env.DSH_WIN7_NODE_ARCHIVE : undefined
+  const archive = customArchive === undefined || customArchive.length === 0
+    ? await downloadPrimaryRuntimeAsset(`https://nodejs.org/dist/v${lock.nodeVersion}/${filename}`, artifact.nodeSha256, cache)
+    : resolve(customArchive)
   const staging = mkdtempSync(join(tmpdir(), 'dsh-node-'))
   try {
     if (target === 'win-x64') await extractZip(archive, { dir: staging })
     else await extractTar({ file: archive, cwd: staging })
-    const source = join(staging, filename.replace(/\.(?:zip|tar\.gz)$/u, ''))
+    const source = target === 'win-x64' && customArchive !== undefined && customArchive.length > 0
+      ? dirname(findWindowsNodeExecutable(staging))
+      : join(staging, filename.replace(/\.(?:zip|tar\.gz)$/u, ''))
     mkdirSync(join(destination, 'bin'), { recursive: true })
     cpSync(join(source, ...(target === 'win-x64' ? ['node.exe'] : ['bin', 'node'])),
       join(destination, 'bin', target === 'win-x64' ? 'node.exe' : 'node'))
@@ -229,6 +245,20 @@ export interface PreparePrimaryRuntimeOptions {
   readonly version: string
   /** Ordinary filesystem Office assets; defaults to the installed skill package. */
   readonly skillSource?: string
+  /** Omit the standalone Node payload when the Win7 Electron shell supplies RunAsNode. */
+  readonly includeStandaloneNode?: boolean
+  /** Optional checkout of yuunnn-w/PythonWin7 used to patch the Win7 Python tree. */
+  readonly win7PythonWin7Dir?: string
+}
+
+/** Apply the external PythonWin7 compatibility pipeline to a Windows Python tree. */
+export function applyWin7PythonCompatibility(pythonRoot: string, repository: string, runner = process.env.DSH_WIN7_PYTHONWIN7_PYTHON ?? 'py'): void {
+  const script = join(resolve(repository), 'tools', 'build_pack.py')
+  if (!readFileSync(script, 'utf8').includes('PythonWin7')) throw new Error(`Win7 Python tool is not PythonWin7: ${script}`)
+  execFileSync(runner, [script, '--target', pythonRoot], {
+    cwd: resolve(repository), stdio: 'inherit', timeout: Number(process.env.DSH_WIN7_PYTHONWIN7_TIMEOUT_MS ?? '600000'),
+    env: { ...process.env, PYTHONNOUSERSITE: '1' },
+  })
 }
 
 /**
@@ -247,22 +277,28 @@ export async function preparePrimaryRuntime(options: PreparePrimaryRuntimeOption
     const output = join(staging, 'payload')
     const dependencies = join(output, 'dependencies')
     mkdirSync(dependencies, { recursive: true })
+    const includeStandaloneNode = options.includeStandaloneNode ?? true
     const node = join(dependencies, 'node')
-    await downloadNodeRuntime(target, node, paths.downloads, lock)
-    mkdirSync(join(node, 'node_modules'))
-    writeFileSync(join(node, 'node_modules', 'README.txt'), 'Reserved for bundled Node packages. pnpm uses its default installation directories.\n')
+    if (includeStandaloneNode) {
+      await downloadNodeRuntime(target, node, paths.downloads, lock)
+      mkdirSync(join(node, 'node_modules'))
+      writeFileSync(join(node, 'node_modules', 'README.txt'), 'Reserved for bundled Node packages. pnpm uses its default installation directories.\n')
+    }
     // pnpm exports only its manifest, which resolves the package entry to package.json itself.
     const pnpmManifest = createRequire(import.meta.url).resolve('pnpm')
     const pnpmVersion = (JSON.parse(readFileSync(pnpmManifest, 'utf8')) as { version: string }).version
     await cp(dirname(pnpmManifest), join(dependencies, 'pnpm'), { recursive: true, dereference: true })
     await extractTar({ file: await pythonArchive(target, paths.downloads, lock), cwd: dependencies })
+    if (target === 'win-x64' && options.win7PythonWin7Dir !== undefined) {
+      applyWin7PythonCompatibility(join(dependencies, 'python'), options.win7PythonWin7Dir)
+    }
     const manifest: PrimaryRuntimeManifest = {
       desktopVersion: options.version,
       platform: target === 'win-x64' ? 'win32' : target.startsWith('linux-') ? 'linux' : 'darwin',
       arch: target.endsWith('-arm64') ? 'arm64' : 'x64',
       payloadDigest: primaryRuntimePayloadDigest(target, lock, pnpmVersion),
       python: lock.pythonVersion,
-      node: lock.nodeVersion,
+      ...(includeStandaloneNode ? { node: process.env.DSH_WIN7_NODE_VERSION ?? lock.nodeVersion } : {}),
       pnpm: pnpmVersion,
       pythonPackages: lock.pythonPackages,
     }
@@ -313,7 +349,7 @@ export function smokePrimaryRuntime(root: string, options: PrimaryRuntimeSmokeOp
   if (manifest.platform !== process.platform || (manifest.arch !== process.arch && launcher.length === 0)) return false
   if (Object.keys(manifest.pythonPackages).length === 0) throw new Error('primary runtime: missing Python distribution versions; prepare the payload before running its smoke checks.')
   const entries = workspaceDependencyPaths(root, manifest)
-  if (entries.node === undefined || entries.pnpm === undefined) throw new Error('primary runtime: the Desktop payload must declare node and pnpm components.')
+  if (entries.pnpm === undefined) throw new Error('primary runtime: the Desktop payload must declare pnpm.')
   const environment = options.environment ?? Object.fromEntries(Object.entries(process.env).filter(([name]) => !/(?:KEY|SECRET|TOKEN|PASSWORD)/iu.test(name)))
   const run = (file: string, args: readonly string[]): void => {
     const [command, ...prefix] = launcher.length === 0 ? [file] : [...launcher, file]
@@ -323,8 +359,10 @@ export function smokePrimaryRuntime(root: string, options: PrimaryRuntimeSmokeOp
   run(entries.python, ['-I', '-B', join(UPSTREAM_PRIMARY_RUNTIME, 'smoke.py'), JSON.stringify(manifest.pythonPackages),
     manifest.python, join(dirname(root), 'office-skills', 'scripts', 'check_office.py')])
   run(entries.python, ['-I', '-B', '-m', 'pip', 'check'])
-  run(entries.node, ['-e', `if (process.versions.node !== ${JSON.stringify(manifest.node)}) process.exit(1)`])
-  run(entries.node, [entries.pnpm, '--version'])
+  if (entries.node !== undefined) {
+    run(entries.node, ['-e', `if (process.versions.node !== ${JSON.stringify(manifest.node)}) process.exit(1)`])
+    run(entries.node, [entries.pnpm, '--version'])
+  }
   return true
 }
 

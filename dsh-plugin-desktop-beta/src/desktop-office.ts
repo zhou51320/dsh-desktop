@@ -1,5 +1,5 @@
 /** Office skills and bundled authoring dependencies; ported from upstream Desktop's Host composition. */
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,6 +23,17 @@ export interface Config {
  * and the tool replaces an installation whose manifest differs, so each edition keeps its own directory.
  */
 export const PRIMARY_RUNTIME_INSTALL_NAME = `${DESKTOP_PACKAGE_NAME}-primary-runtime`
+
+/** Create a writable Windows wrapper that executes Office CLI through Electron RunAsNode. */
+export function ensureElectronNodeShim(root: string, executable: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== 'win32') return undefined
+  const directory = join(root, 'bin')
+  mkdirSync(directory, { recursive: true })
+  const shim = join(directory, 'electron-node.cmd')
+  const escaped = executable.replaceAll('%', '%%').replaceAll('"', '""')
+  writeFileSync(shim, `@echo off\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"${escaped}" %*\r\n`, 'utf8')
+  return shim
+}
 
 /** The bundled interpreter payload of this CPU as the shell located it. */
 export interface DesktopPrimaryRuntime {
@@ -86,9 +97,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await ctx.plugin(workspaceDependencies, config)
   // Stable and Beta ship no archive, so the CLI runs from its installed package under the bundled standalone Node.
   const packageRoot = dirname(fileURLToPath(import.meta.resolve('@deepseek-ai/libreoffice-kit/package.json')))
+  const bundledNode = join(config.source, 'dependencies', 'node', 'bin', process.platform === 'win32' ? 'node.exe' : 'node')
+  const node = process.platform === 'win32' && existsSync(bundledNode)
+    ? bundledNode
+    : process.platform === 'win32' ? ensureElectronNodeShim(config.root, process.execPath) ?? process.execPath : bundledNode
   await ctx.plugin(officeSkills, {
     assetRoot: join(dirname(config.source), 'office-skills'),
-    node: join(config.source, 'dependencies', 'node', 'bin', process.platform === 'win32' ? 'node.exe' : 'node'),
+    node,
     cli: join(packageRoot, 'lib', 'cli.js'),
   })
 }
