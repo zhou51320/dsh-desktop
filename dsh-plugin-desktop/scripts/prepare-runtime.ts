@@ -73,6 +73,10 @@ export interface PrepareDesktopRuntimeOptions {
   readonly platform: NodeJS.Platform
   readonly version: string
   readonly log?: (message: string) => void
+  /** Use Electron RunAsNode instead of shipping a second Node executable. */
+  readonly electronNode?: boolean
+  /** Optional PythonWin7 checkout applied to the Windows Python payload. */
+  readonly win7PythonWin7Dir?: string
 }
 
 /**
@@ -94,7 +98,7 @@ export async function prepareDesktopRuntime(options: PrepareDesktopRuntimeOption
   const skillSource = join(dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-skill-office/package.json')), 'assets')
   for (const { target, arch } of targets) {
     log(`Preparing the ${target} primary runtime (Python ${lock.pythonVersion}, Node ${lock.nodeVersion}) for ${options.version}`)
-    await preparePrimaryRuntime({ lock, target, output: join(paths.runtime, arch), cache: paths.downloads, version: options.version, skillSource })
+    await preparePrimaryRuntime({ lock, target, output: join(paths.runtime, arch), cache: paths.downloads, version: options.version, skillSource, includeStandaloneNode: options.electronNode !== true, ...(options.win7PythonWin7Dir === undefined ? {} : { win7PythonWin7Dir: options.win7PythonWin7Dir }) })
   }
   return paths.runtime
 }
@@ -149,11 +153,11 @@ export function verifyDesktopRuntimeTree(runtimeRoot: string, platform: NodeJS.P
     const manifest = parsePrimaryRuntime(JSON.parse(readFileSync(manifestFile, 'utf8')))
     if (manifest.platform !== platform || manifest.arch !== arch) throw new Error(`Desktop runtime: ${directory} declares ${manifest.platform} ${manifest.arch}, expected ${platform} ${arch}`)
     if (manifest.desktopVersion !== expectedVersion) throw new Error(`Desktop runtime: ${directory} declares version ${manifest.desktopVersion}, expected ${expectedVersion}`)
-    if (manifest.node === undefined || manifest.pnpm === undefined) throw new Error(`Desktop runtime: ${directory} must bundle Node and pnpm`)
+    if (manifest.pnpm === undefined || (platform !== 'win32' && manifest.node === undefined)) throw new Error(`Desktop runtime: ${directory} must bundle pnpm${platform === 'win32' ? '' : ' and Node'}`)
     const entries = workspaceDependencyPaths(directory, manifest)
     if (entries.node === undefined || entries.pnpm === undefined) throw new Error(`Desktop runtime: ${directory} resolves no Node or pnpm entry`)
     requireFile(entries.python, `${arch} Python interpreter`)
-    requireFile(entries.node, `${arch} Node executable`)
+    if (entries.node !== undefined) requireFile(entries.node, `${arch} Node executable`)
     requireFile(entries.pnpm, `${arch} pnpm entry`)
     if (!existsSync(entries.pythonPackages) || !statSync(entries.pythonPackages).isDirectory()) throw new Error(`Desktop runtime: missing ${arch} site-packages: ${entries.pythonPackages}`)
     if (platform === 'darwin') {
@@ -178,6 +182,10 @@ export interface PrepareDesktopInterpretersOptions {
   /** Signs every payload in place before the final checks; signed macOS releases pre-sign the interpreters. */
   readonly sign?: (runtimeRoot: string) => Promise<void>
   readonly log?: (message: string) => void
+  /** Omit standalone Node for Win7 packages; Electron supplies RunAsNode. */
+  readonly electronNode?: boolean
+  /** Optional PythonWin7 checkout applied to the Windows Python payload. */
+  readonly win7PythonWin7Dir?: string
 }
 
 /**
@@ -190,7 +198,7 @@ export interface PrepareDesktopInterpretersOptions {
 export async function prepareDesktopInterpreters(options: PrepareDesktopInterpretersOptions): Promise<string> {
   const platform = options.platform ?? process.platform
   const version = expectedDesktopVersion(options.desktopRoot)
-  const root = await prepareDesktopRuntime({ desktopRoot: options.desktopRoot, platform, version, ...(options.log === undefined ? {} : { log: options.log }) })
+  const root = await prepareDesktopRuntime({ desktopRoot: options.desktopRoot, platform, version, ...(options.log === undefined ? {} : { log: options.log }), ...(options.electronNode === undefined ? {} : { electronNode: options.electronNode }), ...(options.win7PythonWin7Dir === undefined ? {} : { win7PythonWin7Dir: options.win7PythonWin7Dir }) })
   if (options.sign !== undefined) await options.sign(root)
   verifyDesktopRuntimeTree(root, platform, version)
   smokeDesktopRuntime(root, platform, options.log)
@@ -210,5 +218,14 @@ export function verifyPreparedDesktopRuntime(desktopRoot: string, platform: Node
 
 const invokedPath = process.argv[1]
 if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
-  await prepareDesktopInterpreters({ desktopRoot: resolve(import.meta.dirname, '..') })
+  const requestedPlatform = process.env.DSH_RUNTIME_PLATFORM
+  const platform = requestedPlatform === 'win32' || requestedPlatform === 'darwin' || requestedPlatform === 'linux'
+    ? requestedPlatform
+    : undefined
+  await prepareDesktopInterpreters({
+    desktopRoot: resolve(import.meta.dirname, '..'),
+    ...(platform === undefined ? {} : { platform }),
+    ...(process.env.DSH_WIN7_ELECTRON_NODE === '1' && process.env.DSH_WIN7_NODE_ARCHIVE === undefined ? { electronNode: true } : {}),
+    ...(process.env.DSH_WIN7_PYTHONWIN7_DIR === undefined ? {} : { win7PythonWin7Dir: resolve(process.env.DSH_WIN7_PYTHONWIN7_DIR) }),
+  })
 }

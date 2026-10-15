@@ -20,3 +20,6 @@ dsh-desktop-next/.desktop-next/
 dsh-desktop-next/.desktop-build/
 dsh-plugin-desktop/.desktop-build/
 dsh-plugin-desktop-beta/.desktop-build/
+
+# Locally extracted Windows 7 Electron runtime; CI downloads and verifies it.
+runtime/

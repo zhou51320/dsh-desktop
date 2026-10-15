@@ -59,7 +59,7 @@ export interface WindowsPackageOptions {
   /** Absolute electron-builder CLI module. */
   readonly builderCli: string
   /** Prepare platform-specific native runtime dependencies before packaging. */
-  readonly prepareRuntime: () => void
+  readonly prepareRuntime: (electronNode?: boolean) => void
   /** Absolute packaged-installer verification script. */
   readonly verifier: string
   /** Node executable used to run package-local scripts. */
@@ -121,8 +121,9 @@ export function createWindowsPackageOptions(verifier = './verify-win-installer.t
       ? 'cmd.exe'
       : join(windowsRoot, 'System32', 'cmd.exe'),
     builderCli: require.resolve('electron-builder/cli.js'),
-    prepareRuntime: () => {
+    prepareRuntime: (electronNode = false) => {
       prepareFsExtForElectron({ platform: 'win32', arch: 'x64', desktopRoot })
+      if (electronNode) prepareDesktopInterpreters({ desktopRoot, platform: 'win32', electronNode: true })
       verifyPreparedDesktopRuntime(desktopRoot, 'win32')
     },
     verifier: fileURLToPath(new URL(verifier, import.meta.url)),

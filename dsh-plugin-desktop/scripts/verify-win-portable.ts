@@ -11,6 +11,8 @@ export interface WindowsPortableVerificationOptions {
   readonly desktopRoot: string
   /** Product version embedded in the expected artifact name. */
   readonly version: string
+  /** Optional custom dist directory containing generated artifacts. */
+  readonly distDir?: string
 }
 
 function readVersion(desktopRoot: string): string {
@@ -25,16 +27,23 @@ function readVersion(desktopRoot: string): string {
 
 function defaultOptions(): WindowsPortableVerificationOptions {
   const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  return { desktopRoot, version: readVersion(desktopRoot) }
+  const distDir = process.env.DSH_DIST_DIR !== undefined && process.env.DSH_DIST_DIR.length > 0
+    ? resolve(process.env.DSH_DIST_DIR)
+    : undefined
+  return {
+    desktopRoot,
+    version: readVersion(desktopRoot),
+    ...(distDir === undefined ? {} : { distDir }),
+  }
 }
 
 /** Verify the exact versioned portable archive and its application entry. */
 export function verifyWindowsPortable(
   options: WindowsPortableVerificationOptions = defaultOptions(),
 ): string {
+  const distDir = options.distDir ?? join(options.desktopRoot, 'dist')
   const portablePath = join(
-    options.desktopRoot,
-    'dist',
+    distDir,
     `DSH-Desktop-${options.version}-x64-Portable.zip`,
   )
   const stat = statSync(portablePath)
