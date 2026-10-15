@@ -189,7 +189,7 @@ export function packageWindows7Artifact(
     {
       ...cleanEnvironment,
       DSH_RUNTIME_PLATFORM: 'win32',
-      ...(process.env.DSH_WIN7_NODE_ARCHIVE === undefined ? { DSH_WIN7_ELECTRON_NODE: '1' } : {}),
+      ...(options.env.DSH_WIN7_NODE_ARCHIVE === undefined ? { DSH_WIN7_ELECTRON_NODE: '1' } : {}),
     },
   )
   options.prepareRuntime(false)
