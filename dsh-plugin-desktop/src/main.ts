@@ -12,9 +12,10 @@ import * as desktopOffice from './desktop-office.ts'
 import { desktopPrimaryRuntime, resolveDesktopOfficeConfig } from './desktop-office.ts'
 import { app, crashReporter, safeStorage, session, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   boot,
   installFailLoud,
@@ -243,6 +244,18 @@ import { desktopRecoveryCopy } from './recovery-copy.ts'
 
 const BIN_NAME = DESKTOP_PACKAGE_NAME
 const PRODUCT_NAME = DESKTOP_PRODUCT_NAME
+
+/** Electron Win7 builds may not expose Node's private loader; metadata still needs synchronous exports resolution. */
+function installPluginMetadataResolverFallback(): void {
+  const { ModuleLoader } = createRequire(import.meta.url)('@deepseek-ai/cordis-plugin-loader') as typeof import('@deepseek-ai/cordis-plugin-loader')
+  if (ModuleLoader.fromInternal() !== undefined) return
+  ModuleLoader.fromInternal = () => ({
+    version: 'v1',
+    resolveSync(specifier: string, parentURL: string) {
+      return { format: 'module', url: pathToFileURL(createRequire(parentURL).resolve(specifier)).href }
+    },
+  } as never)
+}
 
 function withDesktopDshHome(
   environment: LaunchEnvironmentSnapshot,
@@ -1947,6 +1960,7 @@ async function start(): Promise<void> {
 }
 
 async function run(): Promise<void> {
+  installPluginMetadataResolverFallback()
   app.setName(PRODUCT_NAME)
   if (process.argv.includes('--export-diagnostics')) {
     try {
