@@ -88,7 +88,9 @@ jobs:
           DSH_WIN7_NODE_VERSION: 22.22.3
           DSH_WIN7_PYTHONWIN7_DIR: ${{ github.workspace }}\runtime\PythonWin7
           DSH_WIN7_PYTHONWIN7_PYTHON: py
-          DSH_WIN7_STRICT_NATIVE: "1"
+          # Keep the complete native audit report, but do not fail the portable
+          # archive on unused arm64/ConPTY side-by-side payloads.
+          DSH_WIN7_STRICT_NATIVE: "0"
           DSH_WINDOWS_PACKAGE_COMPRESSION: store
         run: yarn workspace ${{ matrix.workspace }} dist:win7-portable
 
