@@ -483,7 +483,10 @@ describe('published package surface', () => {
     expect(boot).toBeGreaterThan(installDsh)
     expect(main).toContain("'dsh-plugin-desktop: packaged pnpm runtime PATH'")
     expect(main).toContain("'dsh-plugin-desktop: packaged dsh runtime PATH'")
-    expect(main).toContain('hostCtx.loader.internal = undefined')
+    // The Win7 resolver fix must keep Node's internal module loader available;
+    // clearing it makes every plugin's metadata appear broken.
+    expect(main).toContain('Keep the Node internal module resolver available')
+    expect(main).not.toContain('hostCtx.loader.internal = undefined')
     expect(main).toContain('pnpmBinDir: pnpmRuntime.pathDir')
     expect(main).not.toContain("'--host'")
     expect(readFileSync(new URL('src/profile.ts', packageRoot), 'utf8'))
