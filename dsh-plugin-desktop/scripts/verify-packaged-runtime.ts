@@ -333,12 +333,19 @@ export function smokePackagedElectronRuntime(
   // A universal executable runs natively on either macOS CPU. Per-architecture
   // intermediate apps are only executable on the matching packaging host.
   if (!packagedRuntimeRunnable(context)) return
-  const executable = resolvePackagedExecutablePath(context)
+  const electronExecutable = resolvePackagedExecutablePath(context)
   const runtimeRoot = resolvePackagedRuntimeRoot(context)
+  // Win7 ships a dedicated Node runtime for Host/CLI work. Electron 40's
+  // embedded Node 24 fingerprint is intentionally not accepted by the
+  // node-addon-require-builtin prebuild, so exercise the same standalone
+  // runtime that the portable package exposes.
+  const executable = context.electronPlatformName === 'win32'
+    ? join(context.appOutDir, 'resources', 'runtime', 'x64', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe')
+    : electronExecutable
   const smokeHome = mkdtempSync(join(tmpdir(), 'dsh-packaged-cli-'))
   const environment = {
     ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',
+    ...(context.electronPlatformName === 'win32' ? {} : { ELECTRON_RUN_AS_NODE: '1' }),
     DSH_HOME: smokeHome,
     DSH_TELEMETRY_DISABLED: '1',
   }
