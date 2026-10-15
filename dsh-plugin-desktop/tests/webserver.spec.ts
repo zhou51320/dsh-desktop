@@ -169,8 +169,8 @@ describe('Desktop WebServer browser gate', () => {
       },
     })
 
-    await expect(requestUpgrade(server.port, '/socket')).resolves.toContain('403 Forbidden')
-    await expect(requestUpgrade(server.port, '/socket', {
+    await expect(requestUpgrade(server.port!, '/socket')).resolves.toContain('403 Forbidden')
+    await expect(requestUpgrade(server.port!, '/socket', {
       [access.rendererHeader.name]: access.rendererHeader.value,
     })).resolves.toContain('101 Switching Protocols')
   })

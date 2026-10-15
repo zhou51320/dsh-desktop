@@ -167,11 +167,19 @@ const native = new NativeDesktop({ root, language: () => windowsLanguage, state,
   show: openMain, run, warn: error => runtime.diagnostics.append(String(error), 'warn') })
 const permissions = createNativePermissions()
 const updateInstaller = new NextUpdateInstaller({ platform: process.platform, executable: process.execPath,
+  language: () => windowsLanguage,
   log: error => runtime.diagnostics.append(String(error), 'warn') })
 const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged, userData: electronData,
   request: (url, init) => net.fetch(url, { ...init, credentials: 'omit' }),
   artifactRequest: createArtifactRequest(),
   changed: () => { if (app.isReady() && !quitting) native.refresh() },
+  available: nextVersion => {
+    if (app.isReady() && !quitting) {
+      native.notifyUpdate(nextVersion, () => {
+        void promptAvailableUpdate().catch(error => runtime.diagnostics.append(String(error), 'warn'))
+      })
+    }
+  },
   log: error => runtime.diagnostics.append(String(error), 'warn'),
   prepare: (path, nextVersion, directory, signal) => updateInstaller.prepare(path, nextVersion, directory, signal),
   install: async () => {
@@ -418,6 +426,23 @@ async function confirmed(message: string, detail = t('将停止当前 Host，正
   const result = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
   return result.response === 0 && !quitting
 }
+async function promptAvailableUpdate(): Promise<void> {
+  if (quitting || runtime.busy) return
+  const snapshot = updates.snapshot()
+  if (snapshot.phase !== 'available' || !snapshot.installable) return
+  const owner = raiseDialogOwner()
+  const options = {
+    type: 'info' as const,
+    title: 'DSH NEXT',
+    message: updateLabel(snapshot, windowsLanguage),
+    buttons: [t('下载更新', 'Download update'), t('稍后', 'Later')],
+    defaultId: 0,
+    cancelId: 1,
+    detail: t('下载完成后可一键安装并重启。', 'When the download finishes, choose Install and restart.'),
+  }
+  const choice = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
+  if (choice.response === 0 && !quitting && !runtime.busy) void updates.download()
+}
 async function openPath(path: string): Promise<void> { const error = await shell.openPath(path); if (error) throw new Error(error) }
 
 async function command(value: unknown, source: 'app' | 'shell' | 'native' = 'app'): Promise<void> {
@@ -456,12 +481,12 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
       void updates.check().then(async () => {
         if (source !== 'native' || quitting) return
         const snapshot = updates.snapshot()
-        if (snapshot.phase === 'available' && snapshot.installable) {
-          const choice = await dialog.showMessageBox({ type: 'info', title: 'DSH NEXT',
-            message: updateLabel(snapshot, windowsLanguage), buttons: [t('下载更新', 'Download update'), t('稍后', 'Later')], defaultId: 0, cancelId: 1,
-            detail: t('下载完成后可一键安装并重启。', 'When the download finishes, choose Install and restart.') })
-          if (choice.response === 0 && !quitting) void updates.download()
-        } else await dialog.showMessageBox({ type: 'info', title: 'DSH NEXT', message: updateLabel(snapshot, windowsLanguage) })
+        if (snapshot.phase === 'available' && snapshot.installable) await promptAvailableUpdate()
+        else {
+          const owner = raiseDialogOwner()
+          const options = { type: 'info' as const, title: 'DSH NEXT', message: updateLabel(snapshot, windowsLanguage) }
+          await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
+        }
       }).catch(error => runtime.diagnostics.append(String(error), 'warn'))
     } else if (type === 'download-update') void updates.download()
     else {
@@ -1045,7 +1070,6 @@ app.on('before-quit', event => {
         app.quit()
         return
       }
-      if (process.platform === 'darwin') { if (finish()) runtime.diagnostics.end(true); return }
     }
     if (!finish()) return
     runtime.diagnostics.end(true)

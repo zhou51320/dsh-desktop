@@ -10,10 +10,10 @@
       "package": "dsh-plugin-desktop"
     },
     "beta": {
-      "commit": "d743267388641bc76f17c45ce8b4c231aed1d32c",
-      "sourceVersion": "0.2.1-alpha.2",
-      "runtimePackageVersion": "0.2.1-alpha.2",
-      "runtimeSource": "vendor/dsh-runtime/0.2.1-alpha.2/manifest.json",
+      "commit": "2fbf4359b82fb94c03dcce0b831660d87f12ea5c",
+      "sourceVersion": "0.2.1-alpha.3",
+      "runtimePackageVersion": "0.2.1-alpha.3",
+      "runtimeSource": "vendor/dsh-runtime/0.2.1-alpha.3/manifest.json",
       "package": "dsh-plugin-desktop-beta"
     }
   }

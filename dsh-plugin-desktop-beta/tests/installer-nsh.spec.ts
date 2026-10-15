@@ -33,4 +33,19 @@ describe('Windows NSIS running-app handoff', () => {
     expect(script).not.toContain('nsProcess::KillProcess')
     expect(script).not.toContain('getProcessInfo.nsh')
   })
+
+  it('skips wizard pages during --updated and auto-relaunches when --force-run completes visibly', () => {
+    const script = readFileSync(join(process.cwd(), 'build', 'installer.nsh'), 'utf8')
+
+    expect(script).toContain('!macro customInit')
+    expect(script).toContain('SetSilent normal')
+    expect(script).toContain('ShowWindow $HWNDPARENT ${SW_SHOW}')
+    expect(script).toContain('BringToFront')
+    expect(script).toContain('!macro customInstallMode')
+    expect(script).toContain('StrCpy $isForceMachineInstall "1"')
+    expect(script).toContain('StrCpy $isForceCurrentInstall "1"')
+    expect(script).toContain('!macro customInstall')
+    expect(script).toContain('${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "--updated"')
+    expect(script).toContain('!insertmacro quitSuccess')
+  })
 })

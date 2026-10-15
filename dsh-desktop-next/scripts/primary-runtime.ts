@@ -2,14 +2,14 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, cpSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, cpSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readlinkSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import extractZip from 'extract-zip'
 import { x as extractTar } from 'tar'
-import { parsePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import { copyPrimaryRuntime, parsePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '@deepseek-ai/dsh-tool-workspace-dependencies'
 import { prunePrimaryRuntimePythonTests } from './prune-python-tests.ts'
 
 /** The pinned upstream checkout owns the interpreter and wheel lock and the Python smoke script. */
@@ -181,7 +181,7 @@ export function primaryRuntimePayloadDigest(target: PrimaryRuntimeTarget, runtim
   // Identity preserves key order within the selected target, wheel records and distribution map, plus wheel-entry order.
   // Bump format when extraction or assembly changes payload bytes without changing locked inputs.
   return createHash('sha256').update(JSON.stringify({
-    format: 6, target, pythonVersion, pythonRelease, nodeVersion: pnpmVersion === undefined ? undefined : nodeVersion,
+    format: 7, target, pythonVersion, pythonRelease, nodeVersion: pnpmVersion === undefined ? undefined : nodeVersion,
     artifact: runtimeLock.targets[target], wheels, pythonPackages, pnpm: pnpmVersion,
   })).digest('hex')
 }
@@ -276,7 +276,7 @@ export async function preparePrimaryRuntime(options: PreparePrimaryRuntimeOption
     writeFileSync(join(output, 'runtime.json'), `${JSON.stringify(manifest, undefined, 2)}\n`)
     const destination = join(paths.runtime, 'primary-runtime')
     rmSync(destination, { recursive: true, force: true })
-    await cp(output, destination, { recursive: true, dereference: true })
+    await copyPrimaryRuntime(output, destination, manifest)
   } finally {
     rmSync(staging, { recursive: true, force: true })
   }
@@ -314,6 +314,16 @@ export function smokePrimaryRuntime(root: string, options: PrimaryRuntimeSmokeOp
   if (Object.keys(manifest.pythonPackages).length === 0) throw new Error('primary runtime: missing Python distribution versions; prepare the payload before running its smoke checks.')
   const entries = workspaceDependencyPaths(root, manifest)
   if (entries.node === undefined || entries.pnpm === undefined) throw new Error('primary runtime: the Next payload must declare node and pnpm components.')
+  if (manifest.platform !== 'win32') {
+    const interpreter = `python${manifest.python.split('.').slice(0, 2).join('.')}`
+    for (const name of ['python', 'python3']) {
+      const path = join(dirname(entries.python), name)
+      if (!lstatSync(path).isSymbolicLink() || readlinkSync(path) !== interpreter) {
+        throw new Error(`primary runtime: Python commands must be relative aliases of ${interpreter}`)
+      }
+    }
+    if (!lstatSync(join(dirname(entries.python), interpreter)).isFile()) throw new Error('primary runtime: versioned Python must be a regular file')
+  }
   const environment = options.environment ?? Object.fromEntries(Object.entries(process.env).filter(([name]) => !/(?:KEY|SECRET|TOKEN|PASSWORD)/iu.test(name)))
   const run = (file: string, args: readonly string[]): void => {
     const [command, ...prefix] = launcher.length === 0 ? [file] : [...launcher, file]
@@ -321,7 +331,7 @@ export function smokePrimaryRuntime(root: string, options: PrimaryRuntimeSmokeOp
   }
   run(entries.python, ['-I', '-B', '-c', 'import decimal, xml.parsers.expat, lzma, uuid, numpy, pandas; assert numpy.arange(4).sum() == 6; assert pandas.DataFrame({"n": [1, 2]}).n.sum() == 3'])
   run(entries.python, ['-I', '-B', join(UPSTREAM_PRIMARY_RUNTIME, 'smoke.py'), JSON.stringify(manifest.pythonPackages),
-    manifest.python, join(dirname(root), 'office-skills', 'scripts', 'check_office.py')])
+    manifest.python])
   run(entries.python, ['-I', '-B', '-m', 'pip', 'check'])
   run(entries.node, ['-e', `if (process.versions.node !== ${JSON.stringify(manifest.node)}) process.exit(1)`])
   run(entries.node, [entries.pnpm, '--version'])

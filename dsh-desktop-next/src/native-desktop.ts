@@ -63,6 +63,20 @@ export class NativeDesktop {
     notification.show()
     if (this.notifications.size > 10) { const oldest = this.notifications.values().next().value!; oldest.close(); this.notifications.delete(oldest) }
   }
+  notifyUpdate(version: string, onSelect: () => void): void {
+    if (!Notification.isSupported()) { onSelect(); return }
+    const zh = this.options.language().toLowerCase().startsWith('zh')
+    const notification = new Notification({
+      title: 'DSH NEXT',
+      body: zh ? `发现新版本 v${version}，点击下载更新。` : `DSH NEXT v${version} is available. Click to download the update.`,
+    })
+    this.notifications.add(notification)
+    notification.once('click', () => { this.options.show(); onSelect() })
+    notification.once('close', () => this.notifications.delete(notification))
+    notification.once('failed', (_event, error) => { this.notifications.delete(notification); this.options.warn(error) })
+    notification.show()
+    if (this.notifications.size > 10) { const oldest = this.notifications.values().next().value!; oldest.close(); this.notifications.delete(oldest) }
+  }
   close(): void {
     this.tray?.destroy(); this.tray = undefined
     for (const item of this.notifications) item.close()

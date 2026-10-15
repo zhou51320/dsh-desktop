@@ -1,7 +1,7 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -10,7 +10,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import * as desktopOffice from '../src/desktop-office.ts'
 import { desktopPrimaryRuntime, PRIMARY_RUNTIME_INSTALL_NAME, resolveDesktopOfficeConfig } from '../src/desktop-office.ts'
 import { DESKTOP_PACKAGE_NAME } from '../src/product-identity.ts'
@@ -21,6 +21,7 @@ const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
 
 it('loads Office skills with the bundled Node and the installed CLI, and removes them on disposal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'desktop-office-'))
+  vi.stubEnv('DSH_HOME', root)
   const ctx = new Context()
   try {
     const source = join(root, 'runtime', 'arm64', 'primary-runtime')
@@ -54,9 +55,11 @@ it('loads Office skills with the bundled Node and the installed CLI, and removes
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
     await ctx.loader.await()
     for (const entry of ctx.loader.entries()) await entry.fiber?.await()
-    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['office-docx', 'office-pptx', 'office-xlsx'])
-    expect((await ctx.skills.get('office-pptx'))?.resourceBase).toEqual({ kind: 'directory', path: join(assets, 'office-pptx') })
-    const content = (await ctx.skills.get('office-pptx'))?.content ?? ''
+    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['office', 'office-docx', 'office-export-pdf', 'office-pptx', 'office-recalculate', 'office-render', 'office-xlsx'])
+    expect((await ctx.skills.get('office-pptx'))?.resourceBase).toEqual({ kind: 'directory', path: join(assets, 'office-pptx').split(sep).join('/') })
+    expect((await ctx.skills.get('office-pptx'))?.content).toContain('office-render')
+    expect((await ctx.skills.get('office-pptx'))?.content).not.toContain(nodeDirectory)
+    const content = (await ctx.skills.get('office-render'))?.content ?? ''
     expect(content).toContain('libreofficeKit')
     expect(content).toContain(JSON.stringify(join(nodeDirectory, nodeName)).slice(1, -1))
     expect(content).toContain(JSON.stringify(join(dirname(require.resolve('@deepseek-ai/libreoffice-kit/package.json')), 'lib', 'cli.js')).slice(1, -1))
@@ -67,8 +70,11 @@ it('loads Office skills with the bundled Node and the installed CLI, and removes
     expect(await ctx.skills.list()).toEqual([])
     expect(ctx.tools.schemas()).toEqual([])
   } finally {
-    await ctx.fiber.dispose()
-    await rm(root, { recursive: true, force: true })
+    try { await ctx.fiber.dispose() }
+    finally {
+      vi.unstubAllEnvs()
+      await rm(root, { recursive: true, force: true })
+    }
   }
 })
 

@@ -338,12 +338,12 @@ function requestContext(req: IncomingMessage, expectedPort: number): MarketReque
   }
 }
 
-function requestAllowed(req: IncomingMessage, expectedPort: number): boolean {
-  return marketRequestAllowed(requestContext(req, expectedPort))
+function requestAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
+  return expectedPort !== undefined && marketRequestAllowed(requestContext(req, expectedPort))
 }
 
-function mutationAllowed(req: IncomingMessage, expectedPort: number): boolean {
-  return marketMutationAllowed({
+function mutationAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
+  return expectedPort !== undefined && marketMutationAllowed({
     ...requestContext(req, expectedPort),
   })
 }

@@ -427,12 +427,13 @@ export class DesktopHostProcess {
     this.onPlatformSession?.(null)
     if (child.connected) child.send({ type: 'shutdown' }, (error) => { if (error !== null) this.fail(error) })
     const exited = this.exitPromise ?? Promise.resolve()
-    const graceful = await exitsWithin(exited, 10_000)
+    const graceful = await exitsWithin(exited, requireGraceful ? 10_000 : 3_000)
+    const signalTimeoutMs = requireGraceful ? 5_000 : 1_000
     if (!graceful) { this.diagnostic({ source: 'host.process', event: 'shutdown.escalate', level: 'warn', pid: child.pid, fields: { signal: 'SIGTERM' } }); child.kill('SIGTERM') }
-    if (!await exitsWithin(exited, 5_000)) {
+    if (!await exitsWithin(exited, signalTimeoutMs)) {
       this.diagnostic({ source: 'host.process', event: 'shutdown.escalate', level: 'warn', pid: child.pid, fields: { signal: 'SIGKILL' } })
       child.kill('SIGKILL')
-      if (!await exitsWithin(exited, 5_000)) {
+      if (!await exitsWithin(exited, signalTimeoutMs)) {
         throw new Error('dsh desktop host did not exit after SIGKILL')
       }
     }

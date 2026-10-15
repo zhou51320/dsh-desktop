@@ -95,3 +95,31 @@ it('serves only the private archive to the native updater and closes its loopbac
   } finally { await feed.close() }
   await expect(fetch(feed.url)).rejects.toThrow()
 })
+it('notifies once per newly discovered background update version and persists notifiedVersion across restarts', async () => {
+  let latestVersion = '2.0.18-next.1'
+  const available = vi.fn()
+  const { updates, options } = await fixture({
+    available,
+    request: async () => Response.json({ version: latestVersion, channel: 'next' }),
+  })
+  await updates.check(true)
+  expect(available).toHaveBeenCalledTimes(1)
+  expect(available).toHaveBeenCalledWith('2.0.18-next.1')
+
+  // Subsequent background poll of the same version does not re-notify.
+  await updates.check(true)
+  expect(available).toHaveBeenCalledTimes(1)
+
+  // A new NextUpdates instance reading the same userData also skips duplicate notification.
+  const secondAvailable = vi.fn()
+  const restarted = new NextUpdates({ ...options, available: secondAvailable })
+  owners.push(restarted)
+  await restarted.check(true)
+  expect(secondAvailable).not.toHaveBeenCalled()
+
+  // When a newer version is published, background check notifies once for the new version.
+  latestVersion = '2.0.19-next.1'
+  await restarted.check(true)
+  expect(secondAvailable).toHaveBeenCalledTimes(1)
+  expect(secondAvailable).toHaveBeenCalledWith('2.0.19-next.1')
+})

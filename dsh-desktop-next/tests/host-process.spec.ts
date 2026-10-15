@@ -172,6 +172,30 @@ describe('desktop host process', () => {
     await expect(host.stop()).resolves.toBeUndefined()
   })
 
+  it('escalates non-update stop within the 5-second Electron quit budget when active handles keep the child alive', async () => {
+    const diagnostic = vi.fn()
+    const runtime = projectWithHost(`
+      setInterval(() => {}, 60_000)
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
+      process.on('message', message => {
+        if (message.type !== 'shutdown') return
+        process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+      })
+    `)
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, diagnostic)
+    hosts.push(host)
+    await host.start()
+    const startedAt = Date.now()
+    await host.stop()
+    expect(Date.now() - startedAt).toBeLessThan(4_800)
+    expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'host.process',
+      event: 'shutdown.escalate',
+      fields: { signal: 'SIGTERM' },
+    }))
+  })
+
   it('returns the Web authentication URL and waits for graceful shutdown', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()

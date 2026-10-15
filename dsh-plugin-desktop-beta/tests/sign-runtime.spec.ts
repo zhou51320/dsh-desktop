@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -28,6 +28,42 @@ it('signs Mach-O files in their final locations and verifies each signature', as
   expect(t.sign).toHaveBeenCalledWith(join(path, 'addon.node'), expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), identity, undefined)
   expect(t.verify).toHaveBeenCalledWith(join(path, 'addon.node'), identity)
   expect(t.sign).toHaveBeenCalledTimes(1)
+})
+
+// File symlinks in these macOS fixtures require privileges unavailable to ordinary Windows processes.
+it.skipIf(process.platform === 'win32')('signs a shared Python interpreter once and retains both executable aliases', async () => {
+  const path = root()
+  const bin = join(path, 'dependencies/python/bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(path, 'runtime.json'), JSON.stringify({ desktopVersion: '1', platform: 'darwin', arch: 'arm64', python: '3.12.14', pythonPackages: {} }))
+  writeFileSync(join(bin, 'python3.12'), machO)
+  for (const name of ['python', 'python3']) symlinkSync('python3.12', join(bin, name))
+  const t = tools()
+  await expect(signMacRuntime(path, 'com.example.app', identity, 'arm64', t)).resolves.toBe(1)
+  expect(t.sign).toHaveBeenCalledExactlyOnceWith(join(bin, 'python3.12'), expect.any(String), identity, undefined)
+  for (const name of ['python', 'python3']) expect(readlinkSync(join(bin, name))).toBe('python3.12')
+})
+
+// The signer must inspect real file symlinks, including dangling and cyclic ones.
+it.skipIf(process.platform === 'win32').each(['unknown', 'absolute', 'escaping', 'dangling', 'chained', 'directory'])('rejects a %s runtime link before signing any file', async (kind) => {
+  const path = root()
+  const bin = join(path, 'dependencies/python/bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(path, 'runtime.json'), JSON.stringify({ desktopVersion: '1', platform: 'darwin', arch: 'arm64', python: '3.12.14', pythonPackages: {} }))
+  const canonical = join(bin, 'python3.12')
+  if (kind === 'directory') mkdirSync(canonical)
+  else if (kind !== 'dangling') writeFileSync(canonical, machO)
+  if (kind === 'chained') {
+    rmSync(canonical)
+    symlinkSync('python3', canonical)
+  }
+  const target = kind === 'absolute' ? canonical : kind === 'escaping' ? '../outside' : 'python3.12'
+  symlinkSync(target, join(bin, kind === 'unknown' ? 'unlisted' : 'python3'))
+  const t = tools()
+  const result = signMacRuntime(path, 'com.example.app', identity, 'arm64', t)
+  if (kind === 'dangling') await expect(result).rejects.toMatchObject({ code: 'ENOENT', path: canonical })
+  else await expect(result).rejects.toThrow(kind === 'unknown' ? 'must not contain links' : 'invalid Python alias')
+  expect(t.sign).not.toHaveBeenCalled()
 })
 
 it('awaits other signers before rejecting and permitting output cleanup', async () => {

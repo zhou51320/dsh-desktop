@@ -28,6 +28,8 @@ it('omits development artifacts while preserving executable modules, assets and 
     'node-pty/prebuilds/win32-x64/conpty.pdb',
     '@koromix/koffi-win32-x64/win32_x64/koffi.lib',
     '@mixmark-io/domino/test/entities.html',
+    '@mixmark-io/domino/.yarn/plugins/@yarnpkg/plugin-version.cjs',
+    '@mixmark-io/domino/.yarn/versions/release.yml',
     '@deepseek-ai/libreoffice-kit-wasm/assets/soffice.data',
     '@deepseek-ai/libreoffice-kit-darwin-arm64/bin/libreoffice-kit',
     '.modules.yaml', '.pnpm-workspace-state-v1.json', '.yarn-state.yml', '.bin/tool', '.pnpm/cache',
@@ -46,6 +48,8 @@ it('omits development artifacts while preserving executable modules, assets and 
     'node-pty/third_party/conpty/win10-x64/OpenConsole.exe',
     '@koromix/koffi-win32-x64/win32_x64/koffi.node',
     '@mixmark-io/domino/lib/HTMLParser.js', '@mixmark-io/domino/lib/EntityParser.js',
+    '@mixmark-io/domino/LICENSE', '@mixmark-io/domino/package.json',
+    'example/.yarn/runtime.cjs', '@mixmark-io/domino/.yarn-data.json',
     '@img/sharp-win32-x64/lib/libvips-42.dll',
     '@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe',
     '@deepseek-ai/libreoffice-kit-win32-x64/sources/core-source.json',
@@ -75,6 +79,8 @@ it('omits development artifacts while preserving executable modules, assets and 
 
 it('applies package-specific rules inside scoped and nested dependency containers', () => {
   expect(nextRuntimeFileExclusion('outer/node_modules/@mixmark-io/domino/test/data.html', windows)).toBeDefined()
+  expect(nextRuntimeFileExclusion('outer/node_modules/@mixmark-io/domino/.yarn/plugin.cjs', windows)).toBeDefined()
+  expect(nextRuntimeFileExclusion('@mixmark-io/domino/.yarn', windows)).toBeDefined()
   expect(nextRuntimeFileExclusion('outer\\node_modules\\node-pty\\prebuilds\\win32-arm64\\conpty.node', windows)).toBeDefined()
   expect(nextRuntimeFileExclusion('outer/node_modules/unrelated/test/data.html', windows)).toBeUndefined()
   expect(nextRuntimeFileExclusion('outer/fs-ext/build/Release/fs_ext.lib', windows)).toBeUndefined()
@@ -85,6 +91,8 @@ it('retains native prebuilds and Office engines for every architecture of a univ
   expect(nextRuntimeFileExclusion('node-pty/prebuilds/darwin-x64/spawn-helper', universal)).toBeUndefined()
   expect(nextRuntimeFileExclusion('node-pty/prebuilds/linux-arm64/pty.node', universal)).toBe('node-pty other platform')
   expect(nextRuntimeFileExclusion('node-pty/prebuilds/win32-x64/conpty.node', universal)).toBe('node-pty other platform')
+  expect(nextRuntimeFileExclusion('node-pty/third_party/conpty/1.25.260303002/win10-x64/OpenConsole.exe', universal)).toBe('node-pty Windows ConPTY sources')
+  expect(nextRuntimeFileExclusion('node-pty/third_party/conpty/1.25.260303002/win10-x64/OpenConsole.exe', windows)).toBeUndefined()
   expect(nextRuntimeFileExclusion('@deepseek-ai/libreoffice-kit-darwin-arm64/program/soffice', universal)).toBeUndefined()
   expect(nextRuntimeFileExclusion('@deepseek-ai/libreoffice-kit-darwin-x64/program/soffice', universal)).toBeUndefined()
   expect(nextRuntimeFileExclusion('@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe', universal)).toBe('LibreOffice other platform')

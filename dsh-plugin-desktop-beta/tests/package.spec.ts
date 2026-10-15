@@ -1369,7 +1369,7 @@ describe('published package surface', () => {
     // dsh 0.2.1-alpha.2 replaced `nodeExecutable` with `launch`; the local default is still this process.
     expect(index).toMatch(/const launch = config \?\? \{\s+kind: "pkg" in process \? "embedded" : "node-script",\s+executable: process\.execPath\s+\};/u)
     expect(index).toContain('confined = policy.mode === "danger-full-access" ? void 0 : await this.ctx.sandbox.confine(')
-    const block = /\t+const env = Object\.fromEntries\(Object\.keys\(process\.env\)[\s\S]*?\n\t+if \(packaged\) \{[\s\S]*?\n\t+\}\n(?=\t+handle = this\.ctx\.subprocess\.spawn\()/u.exec(index)?.[0]
+    const block = /\t+const env = Object\.fromEntries\(Object\.keys\(process\.env\)[^\n]*\n(?:\t+\/\/[^\n]*\n)*\t+if \(process\.versions\.electron !== void 0\) env\.ELECTRON_RUN_AS_NODE = "1";\n\t+if \(packaged\) \{[\s\S]*?\n\t+\}\n(?=\t+handle = this\.ctx\.subprocess\.spawn\()/u.exec(index)?.[0]
     if (block === undefined) throw new Error('Cannot find the PTC worker environment')
     const evaluate = (electron: string | undefined, parent: Record<string, string>, packaged = true) => runInNewContext(
       `${block}\nenv`,
@@ -1394,7 +1394,8 @@ describe('published package surface', () => {
     const names = /const STARTUP_ENVIRONMENT_NAMES = new Set\(\[([\s\S]*?)\]\)/u.exec(bootstrap)?.[1]
     if (names === undefined) throw new Error('Cannot find the PTC bootstrap environment allowlist')
     expect(names).not.toMatch(/ELECTRON_RUN_AS_NODE/iu)
-    expect(bootstrap).toContain('if (!STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase())) Reflect.deleteProperty(processState.env, key);')
+    expect(bootstrap).toContain('if (!STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase())) Reflect.deleteProperty(state.env, key);')
+    expect(bootstrap).toContain('clearProgramEnvironment(processState);')
   })
 
   // A patch whose filename does not match the pinned version degrades silently to the

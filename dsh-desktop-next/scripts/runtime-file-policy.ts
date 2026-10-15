@@ -38,6 +38,10 @@ export function nextRuntimeFileExclusion(path: string, target: NextPackagingTarg
     return 'fs-ext build configuration'
   }
   if (name === '@mixmark-io/domino' && (entry === 'test' || entry.startsWith('test/'))) return 'Domino test fixtures'
+  if (name === '@mixmark-io/domino' && (entry === '.yarn' || entry.startsWith('.yarn/'))) return 'Domino development tooling'
+  if (name === 'node-pty' && target.platform !== 'win32' && /^third_party\/conpty(?:\/|$)/u.test(entry)) {
+    return 'node-pty Windows ConPTY sources'
+  }
   if (name === 'node-pty' && entry.startsWith('prebuilds/')) {
     const platform = packageParts[nameParts + 1]
     if (platform !== undefined && !targets.includes(platform)) return 'node-pty other platform'

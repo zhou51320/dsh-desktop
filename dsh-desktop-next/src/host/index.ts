@@ -91,6 +91,7 @@ export async function main(): Promise<void> {
     try { await running?.shutdown.shutdown(0); end() } catch (error) { end(error); throw error }
     await send({ type: 'shutdown-complete' })
     if (process.connected) process.disconnect()
+    process.exit(0)
   })()
   process.on('message', (value: unknown) => {
     if (typeof value === 'object' && value !== null && 'type' in value && value.type === 'logging-config') {

@@ -1825,13 +1825,17 @@ async function start(): Promise<void> {
               ))
             },
             readWeb: () => {
+              const port = hostCtx.webServer.port
+              if (port === undefined) {
+                throw new Error('dsh-plugin-desktop: the WebServer has not bound a port')
+              }
               const lan = lanHttps.snapshot()
               const lanOrigins = lan.state === 'ready' && lan.actualPort !== null
                 ? desktopLanBrowserUrls(lan.actualPort, lan.addresses)
                 : []
               return {
                 localUrl: hostCtx.connection.authenticatedUrl(
-                  desktopLoopbackBrowserUrl(hostCtx.webServer.port),
+                  desktopLoopbackBrowserUrl(port),
                 ),
                 lanUrls: lanOrigins.map(url => hostCtx.connection.authenticatedUrl(url)),
                 lanState: lan.state,
