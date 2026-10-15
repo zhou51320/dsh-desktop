@@ -13,6 +13,13 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { disableAsarArchiveView } from './asar-archive-policy.ts'
+
+// This smoke runs directly through Electron's Node mode. Disable Electron's
+// transparent ASAR filesystem shim before dsh-fs-local stats packaged paths;
+// otherwise a *.asar file is exposed with numeric fields despite bigint
+// stats and triggers a BigInt/number arithmetic failure.
+disableAsarArchiveView(import.meta.url)
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { verifyBundledSkills } from './packaged-filesystem-smoke.ts'
 import { rgPath } from '@vscode/ripgrep'
