@@ -83,7 +83,7 @@ describe('Windows 7 x64 installer packaging', () => {
     packageWindows7Installer({ ...options(calls, logs), prepareRuntime })
 
     expect(prepareRuntime).toHaveBeenCalledOnce()
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
     expect(calls[0]).toEqual({
       command: 'C:\\Windows\\System32\\cmd.exe',
       args: [
@@ -96,6 +96,17 @@ describe('Windows 7 x64 installer packaging', () => {
       env: { PATH: 'C:\\Windows\\System32', SAFE_VALUE: 'kept' },
     })
     expect(calls[1]).toEqual({
+      command: 'C:\\Program Files\\nodejs\\node.exe',
+      args: ['scripts/prepare-runtime.ts'],
+      cwd: 'C:\\repo\\dsh-plugin-desktop',
+      env: {
+        PATH: 'C:\\Windows\\System32',
+        SAFE_VALUE: 'kept',
+        DSH_RUNTIME_PLATFORM: 'win32',
+        DSH_WIN7_ELECTRON_NODE: '1',
+      },
+    })
+    expect(calls[2]).toEqual({
       command: 'C:\\Program Files\\nodejs\\node.exe',
       args: [
         'C:\\repo\\node_modules\\electron-builder\\cli.js',
@@ -119,7 +130,7 @@ describe('Windows 7 x64 installer packaging', () => {
         DSH_WIN7: '1',
       },
     })
-    expect(calls[2]).toEqual({
+    expect(calls[3]).toEqual({
       command: 'C:\\Program Files\\nodejs\\node.exe',
       args: ['C:\\repo\\dsh-plugin-desktop\\scripts\\verify-win-installer.ts'],
       cwd: 'C:\\repo\\dsh-plugin-desktop',
@@ -148,8 +159,8 @@ describe('Windows 7 x64 installer packaging', () => {
       },
     })
 
-    expect(calls).toHaveLength(2)
-    expect(calls[0]?.args).toContain(`--config.electronDist=${customDist}`)
+    expect(calls).toHaveLength(3)
+    expect(calls[1]?.args).toContain(`--config.electronDist=${customDist}`)
     expect(logs).toContain(`Using custom Win7 Electron distribution at ${customDist}`)
   })
 
@@ -167,7 +178,7 @@ describe('Windows 7 x64 installer packaging', () => {
 
     packageWindows7Artifact(value, 'zip', 'portable archive')
 
-    expect(calls[0]?.args).toEqual([
+    expect(calls[1]?.args).toEqual([
       'C:\\repo\\node_modules\\electron-builder\\cli.js',
       '--win',
       'zip',
@@ -180,7 +191,7 @@ describe('Windows 7 x64 installer packaging', () => {
       '--config.directories.output=dist/win7',
       '--config.electronVersion=40.2.0',
     ])
-    expect(calls[1]?.args).toEqual([
+    expect(calls[2]?.args).toEqual([
       'C:\\repo\\dsh-plugin-desktop\\scripts\\verify-win-portable.ts',
     ])
     expect(logs).toContain(

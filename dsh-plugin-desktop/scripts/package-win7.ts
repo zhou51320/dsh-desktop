@@ -179,16 +179,20 @@ export function packageWindows7Artifact(
     options.log('Skipping the Windows package preflight; the package gate already passed.')
   }
 
-  if (options.platform === 'win32') {
-    options.prepareRuntime(process.env.DSH_WIN7_NODE_ARCHIVE === undefined)
-  } else {
-    options.run(
-      options.nodeExecutable,
-      ['scripts/prepare-runtime.ts'],
-      options.desktopRoot,
-      { ...cleanEnvironment, DSH_RUNTIME_PLATFORM: 'win32', DSH_WIN7_ELECTRON_NODE: '1' },
-    )
-  }
+  // Always materialize and validate the packaged runtime tree.  A supplied
+  // Win7 Node archive is an input to prepare-runtime; it must not cause the
+  // preparation step to be skipped (otherwise runtime.json is missing).
+  options.run(
+    options.nodeExecutable,
+    ['scripts/prepare-runtime.ts'],
+    options.desktopRoot,
+    {
+      ...cleanEnvironment,
+      DSH_RUNTIME_PLATFORM: 'win32',
+      ...(process.env.DSH_WIN7_NODE_ARCHIVE === undefined ? { DSH_WIN7_ELECTRON_NODE: '1' } : {}),
+    },
+  )
+  options.prepareRuntime(false)
 
   const builderArgs: string[] = [
     options.builderCli,
