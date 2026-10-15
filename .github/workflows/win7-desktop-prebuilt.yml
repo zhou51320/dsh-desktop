@@ -1,0 +1,122 @@
+name: Win7 Desktop Prebuilt
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+env:
+  NODE_OPTIONS: --max-old-space-size=8192
+  WIN7_ELECTRON_VERSION: 40.2.0
+  WIN7_ELECTRON_URL: https://github.com/e3kskoy7wqk/Electron-for-windows-7/releases/download/v40.2.0/dist.zip
+  WIN7_ELECTRON_SHA256: ed4ebb022624ae38f764fcfc1dc1ce30fe2145298975d4c90e8d95412deeadea
+
+jobs:
+  win7-desktop:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [dsh-plugin-desktop]
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Resolve Yarn cache folder
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$env:GITHUB_OUTPUT"
+
+      - name: Cache Yarn dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Check out Win7 Node runtime
+        uses: actions/checkout@v6
+        with:
+          repository: DeftKing/nodejs-win7
+          ref: main
+          path: runtime/nodejs-win7
+          persist-credentials: false
+
+      - name: Check out PythonWin7 toolchain
+        uses: actions/checkout@v6
+        with:
+          repository: yuunnn-w/PythonWin7
+          ref: main
+          path: runtime/PythonWin7
+          persist-credentials: false
+
+      - name: Download Win7 Electron runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path runtime | Out-Null
+          Invoke-WebRequest -Uri $env:WIN7_ELECTRON_URL -OutFile runtime\electron-win7.zip
+          $hash = (Get-FileHash -Algorithm SHA256 runtime\electron-win7.zip).Hash.ToLower()
+          if ($hash -ne $env:WIN7_ELECTRON_SHA256) {
+            throw "Unexpected Win7 Electron SHA256: $hash"
+          }
+          Expand-Archive -Path runtime\electron-win7.zip -DestinationPath runtime\electron-win7 -Force
+
+      - name: Package Win7 Windows portable archive
+        shell: pwsh
+        env:
+          DSH_WIN7_ELECTRON_DIST: ${{ github.workspace }}\runtime\electron-win7
+          DSH_WIN7_NODE_ARCHIVE: ${{ github.workspace }}\runtime\nodejs-win7\node-22.22.3\node-v22.22.3-win-x64.zip
+          DSH_WIN7_NODE_VERSION: 22.22.3
+          DSH_WIN7_PYTHONWIN7_DIR: ${{ github.workspace }}\runtime\PythonWin7
+          DSH_WIN7_PYTHONWIN7_PYTHON: py
+          DSH_WIN7_STRICT_NATIVE: "1"
+          DSH_WINDOWS_PACKAGE_COMPRESSION: store
+        run: yarn workspace ${{ matrix.workspace }} dist:win7-portable
+
+      - name: Write runtime provenance report
+        shell: pwsh
+        run: |
+          yarn workspace ${{ matrix.workspace }} report:win7-runtime "$env:GITHUB_WORKSPACE\runtime\electron-win7" --out ${{ matrix.workspace }}/dist/win7/prebuilt-runtime
+
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          cd ${{ matrix.workspace }}\dist\win7
+          Get-ChildItem -Recurse -File | ForEach-Object {
+            $relative = Resolve-Path -Relative $_.FullName
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            "$hash  $relative" | Out-File -FilePath SHA256SUMS.txt -Append -Encoding utf8
+          }
+          Get-Content SHA256SUMS.txt
+
+      - name: Upload Win7 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.workspace }}-win7-prebuilt
+          path: |
+            ${{ matrix.workspace }}/dist/win7/*.exe
+            ${{ matrix.workspace }}/dist/win7/*.zip
+            ${{ matrix.workspace }}/dist/win7/win-unpacked/**
+            ${{ matrix.workspace }}/dist/win7/native-audit.*
+            ${{ matrix.workspace }}/dist/win7/prebuilt-runtime.*
+            ${{ matrix.workspace }}/dist/win7/SHA256SUMS.txt
+          retention-days: 14
+          compression-level: 8
