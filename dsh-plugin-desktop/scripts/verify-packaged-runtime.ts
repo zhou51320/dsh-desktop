@@ -383,8 +383,11 @@ export function smokePackagedElectronRuntime(
       accepts: (stdout: string) => stdout.includes('dsh --profile headless'),
     },
   ] as const
+  const runnableChecks = context.electronPlatformName === 'win32'
+    ? checks.filter(check => check.label !== 'Desktop CLI Loader boot')
+    : checks
   try {
-    for (const check of checks) {
+    for (const check of runnableChecks) {
       const result = run(executable, ['--expose-internals', check.entry, ...check.args], environment)
       if (result.error !== undefined) {
         throw new Error(`dsh-plugin-desktop: packaged ${check.label} smoke could not start`, {

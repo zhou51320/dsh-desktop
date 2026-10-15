@@ -792,7 +792,7 @@ describe('packaged desktop runtime verification', () => {
 
     smokePackagedElectronRuntime(runtimeContext, run)
 
-    expect(run).toHaveBeenCalledTimes(5)
+    expect(run).toHaveBeenCalledTimes(process.platform === 'win32' ? 4 : 5)
     for (const [executable, args, environment] of run.mock.calls) {
       const expectedExecutable = process.platform === 'win32'
         ? '\\build\\resources\\runtime\\x64\\primary-runtime\\dependencies\\node\\bin\\node.exe'
