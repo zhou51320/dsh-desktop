@@ -2,7 +2,6 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { delimiter } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
   formatProfileMaterializationFailure,
