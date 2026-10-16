@@ -335,10 +335,8 @@ export function smokePackagedElectronRuntime(
   if (!packagedRuntimeRunnable(context)) return
   const electronExecutable = resolvePackagedExecutablePath(context)
   const runtimeRoot = resolvePackagedRuntimeRoot(context)
-  // Win7 ships a dedicated Node runtime for Host/CLI work. Electron 40's
-  // embedded Node 24 fingerprint is intentionally not accepted by the
-  // node-addon-require-builtin prebuild, so exercise the same standalone
-  // runtime that the portable package exposes.
+  // Win7 ships a dedicated Node runtime for Host/CLI work. Exercise the
+  // identical standalone runtime that starts the packaged Host and plugins.
   const executable = context.electronPlatformName === 'win32'
     ? join(context.appOutDir, 'resources', 'runtime', 'x64', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe')
     : electronExecutable
@@ -383,11 +381,8 @@ export function smokePackagedElectronRuntime(
       accepts: (stdout: string) => stdout.includes('dsh --profile headless'),
     },
   ] as const
-  const runnableChecks = context.electronPlatformName === 'win32'
-    ? checks.filter(check => check.label !== 'Desktop CLI Loader boot')
-    : checks
   try {
-    for (const check of runnableChecks) {
+    for (const check of checks) {
       const result = run(executable, ['--expose-internals', check.entry, ...check.args], environment)
       if (result.error !== undefined) {
         throw new Error(`dsh-plugin-desktop: packaged ${check.label} smoke could not start`, {
