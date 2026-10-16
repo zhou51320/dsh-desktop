@@ -373,12 +373,14 @@ export function smokePackagedElectronRuntime(
       accepts: (stdout: string) => stdout.includes('# == ') && stdout.includes('name:'),
     },
     {
-      // This is deliberately the Desktop wrapper rather than DSH's bin.js:
-      // a child RunAsNode process cannot inherit main's resolver hook.
-      label: 'Desktop CLI Loader boot',
-      entry: join(runtimeRoot, 'lib', 'desktop-cli.js'),
-      args: ['--profile', 'headless', '--help'],
-      accepts: (stdout: string) => stdout.includes('dsh --profile headless'),
+      // This starts the actual Desktop Host loader with a profile-local third
+      // party plugin. It deliberately does not use DSH's standalone CLI:
+      // that CLI installs a private Node resolver which DeftKing's Win7 Node
+      // cannot expose, while the Desktop Host uses its public profile resolver.
+      label: 'Desktop Host Plugin Loader boot',
+      entry: join(runtimeRoot, 'scripts', 'verify-loader-boot.mjs'),
+      args: [],
+      accepts: (stdout: string) => stdout.trim() === 'DSH_PACKAGED_LOADER_OK',
     },
   ] as const
   try {

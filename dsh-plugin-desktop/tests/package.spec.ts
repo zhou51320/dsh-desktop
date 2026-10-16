@@ -852,6 +852,7 @@ describe('published package surface', () => {
       'build/tray-icon*.png',
       'cordis.patch.yml',
       'lib/**',
+      'scripts/verify-loader-boot.mjs',
       'package.json',
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',

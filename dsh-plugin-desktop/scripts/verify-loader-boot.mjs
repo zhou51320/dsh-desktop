@@ -12,6 +12,7 @@ import {
 } from '@deepseek-ai/dsh-launch-environment'
 import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
 import { installProfilePackageResolver } from '../lib/module-resolution.js'
+import { installPluginMetadataResolverFallback } from '../lib/plugin-metadata-resolver.js'
 import { prepareDesktopProfile } from '../lib/profile.js'
 
 const BIN_NAME = 'dsh-plugin-desktop-loader-smoke'
@@ -67,6 +68,9 @@ const runnerEnvironment = Object.entries(process.env)
   .filter(([key]) => RUNNER_ENVIRONMENT_NAMES.has(key.toUpperCase()))
 
 try {
+  // The Win7 standalone Node cannot use the ABI-specific private-loader addon.
+  // Plugin metadata still resolves through the public synchronous fallback.
+  installPluginMetadataResolverFallback()
   for (const [key] of runnerEnvironment) delete process.env[key]
   const launchEnvironment = createLaunchEnvironmentSnapshot([{
     source: 'process',
@@ -224,6 +228,7 @@ try {
   if (mountedSpec?.rendererAccessHeader !== BROWSER_ACCESS.rendererHeader) {
     throw new Error('desktop plugin did not preserve the launcher browser capability')
   }
+  process.stdout.write('DSH_PACKAGED_LOADER_OK\n')
 } finally {
   try {
     await ctx?.fiber.dispose()

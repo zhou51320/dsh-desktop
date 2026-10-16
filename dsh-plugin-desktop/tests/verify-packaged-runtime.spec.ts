@@ -783,8 +783,8 @@ describe('packaged desktop runtime verification', () => {
             ? pnpmVersion
             : args.includes('--dump-config')
               ? '# == cordis.yml\n- name: @deepseek-ai/dsh-base\n'
-              : normalizedArgs.some(arg => arg.endsWith('/lib/desktop-cli.js'))
-                ? 'Usage: dsh --profile headless [options]'
+              : normalizedArgs.some(arg => arg.endsWith('/scripts/verify-loader-boot.mjs'))
+                ? 'DSH_PACKAGED_LOADER_OK'
                 : 'DSH_PACKAGED_RUNTIME_OK',
         stderr: '',
       }
@@ -792,9 +792,8 @@ describe('packaged desktop runtime verification', () => {
 
     smokePackagedElectronRuntime(runtimeContext, run)
 
-    // Windows runs the same Desktop CLI Loader boot as every other target.
-    // It uses the bundled standalone Node, so this is also the regression gate
-    // for the Win7 Host/plugin runtime rather than an Electron-only smoke.
+    // Windows runs the same Desktop Host plugin Loader boot as every other
+    // target. It uses the bundled standalone Node and a profile-local plugin.
     expect(run).toHaveBeenCalledTimes(5)
     for (const [executable, args, environment] of run.mock.calls) {
       const expectedExecutable = process.platform === 'win32'
@@ -802,7 +801,10 @@ describe('packaged desktop runtime verification', () => {
         : resolvePackagedExecutablePath(runtimeContext)
       expect(executable).toBe(expectedExecutable)
       expect(args).toContain('--expose-internals')
-      expect(args.some(arg => arg.includes('app.asar'))).toBe(true)
+      expect(
+        args.some(arg => arg.includes('app.asar'))
+        || args.some(arg => arg.endsWith('scripts/verify-loader-boot.mjs')),
+      ).toBe(true)
       expect(environment.ELECTRON_RUN_AS_NODE).toBe(process.platform === 'win32' ? undefined : '1')
       expect(environment.DSH_HOME).toEqual(expect.any(String))
     }
