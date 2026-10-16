@@ -46,7 +46,7 @@ const STATE_DIRECTORY_MODE = 0o700
 const EXECUTABLE_FILE_MODE = 0o700
 const PRIVATE_FILE_MODE = 0o600
 const WINDOWS_SHELL_COMMANDS = ['pwsh.exe', 'powershell.exe', 'cmd.exe'] as const
-const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
+const NODE_HEADERS_URL = 'https://nodejs.org/download/release'
 
 /** Platforms with a native terminal launch contract owned by DSH Desktop. */
 export type DesktopTerminalPlatform = 'darwin' | 'win32'
@@ -80,14 +80,16 @@ export interface WindowsTerminalLauncher {
 export interface DesktopTerminalOptions {
   /** Host platform selecting the generated scripts and native launcher. */
   platform: NodeJS.Platform
-  /** Electron executable reused as Node by command shims. */
+  /** Packaged Node executable used by command shims. */
   appExecutable: string
   /** Desktop-owned bootstrap that clears Node mode before importing the `dsh` CLI. */
   dshBootstrapPath: string
   /** Packaged JavaScript entry for the `pnpm` CLI. */
   pnpmBinPath: string
-  /** Electron version used by pnpm native dependency installation. */
-  electronVersion: string
+  /** Node version used by pnpm native dependency installation. */
+  nodeVersion?: string
+  /** @deprecated Compatibility input for callers not yet migrated to nodeVersion. */
+  electronVersion?: string
   /** DSH profile selected by the desktop application. */
   profileName: string
   /** Product version displayed in the welcome message. */
@@ -264,10 +266,9 @@ function macPnpmShim(options: DesktopTerminalOptions): string {
   return [
     '#!/bin/sh',
     [
-      `${RUN_AS_NODE}=1`,
-      'npm_config_runtime=electron',
-      `npm_config_target=${quoteSh(options.electronVersion)}`,
-      `npm_config_disturl=${quoteSh(ELECTRON_HEADERS_URL)}`,
+      'npm_config_runtime=node',
+      `npm_config_target=${quoteSh(options.nodeVersion ?? options.electronVersion ?? '')}`,
+      `npm_config_disturl=${quoteSh(NODE_HEADERS_URL)}`,
       `exec ${quoteSh(options.appExecutable)} ${quoteSh(options.pnpmBinPath)} ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} "$@"`,
     ].join(' '),
     '',
@@ -279,10 +280,9 @@ function windowsPnpmShim(): string {
   return [
     '@echo off',
     'setlocal DisableDelayedExpansion',
-    `set "${RUN_AS_NODE}=1"`,
-    'set "npm_config_runtime=electron"',
+    'set "npm_config_runtime=node"',
     `set "npm_config_target=%${WINDOWS_ELECTRON_VERSION}%"`,
-    `set "npm_config_disturl=${ELECTRON_HEADERS_URL}"`,
+    `set "npm_config_disturl=${NODE_HEADERS_URL}"`,
     `"%${WINDOWS_APP_EXECUTABLE}%" "%${WINDOWS_PNPM_ENTRY}%" ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} %*`,
     'exit /b %errorlevel%',
     '',
@@ -435,7 +435,7 @@ function prepareDesktopTerminalFiles(options: DesktopTerminalOptions): DesktopTe
     ['application executable', options.appExecutable],
     ['dsh bootstrap', options.dshBootstrapPath],
     ['pnpm entry', options.pnpmBinPath],
-    ['Electron version', options.electronVersion],
+    ['Node version', options.nodeVersion ?? options.electronVersion ?? ''],
     ['profile directory', options.profileDir],
     ['Harness home', options.homeDir],
     ['state directory', options.stateDir],
@@ -509,7 +509,7 @@ function terminalEnvironment(options: DesktopTerminalOptions, files: DesktopTerm
     env[DEFAULT_PROFILE] = options.profileName
     env[WINDOWS_APP_EXECUTABLE] = options.appExecutable
     env[WINDOWS_DSH_BOOTSTRAP] = options.dshBootstrapPath
-    env[WINDOWS_ELECTRON_VERSION] = options.electronVersion
+    env[WINDOWS_ELECTRON_VERSION] = options.nodeVersion ?? options.electronVersion
     env[WINDOWS_PNPM_ENTRY] = options.pnpmBinPath
     env[WINDOWS_PROFILE_DIRECTORY] = options.profileDir
     env[WINDOWS_PRODUCT_VERSION] = options.productVersion

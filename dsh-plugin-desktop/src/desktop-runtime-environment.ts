@@ -1,5 +1,6 @@
 /** App-local command environments available to desktop Host plugins. */
 
+import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   chmodSync,
@@ -15,13 +16,15 @@ import { join, win32 as windowsPath } from 'node:path'
 import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
 import { assertDesktopProfileName } from './profile-manager.ts'
 
-const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE'
 const DEFAULT_PROFILE = 'DSH_DESKTOP_DEFAULT_PROFILE'
 const DSH_HOME = 'DSH_HOME'
 const RUNTIME_CODEPAGE = 'DSH_RUNTIME_CODEPAGE'
 const RUNTIME_EXIT = 'DSH_RUNTIME_EXIT'
 const PATH = 'PATH'
-const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
+const NODE_HEADERS_URL = 'https://nodejs.org/download/release'
+
+/** Node header origin the generated pnpm shims hand to node-gyp. */
+export const PNPM_NODE_HEADERS_URL = NODE_HEADERS_URL
 const DIRECTORY_MODE = 0o700
 const EXECUTABLE_FILE_MODE = 0o700
 const PRIVATE_FILE_MODE = 0o600
@@ -29,16 +32,49 @@ const GENERATION_SCHEMA_VERSION = 1
 const GENERATION_NAME = /^(?<hash>[0-9a-f]{64})-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const MANIFEST_NAME = '.generation.json'
 
+/** Resolve the real Node executable shipped beside a packaged desktop application. */
+export function bundledNodeExecutable(resourcesPath: string | undefined): string {
+  if (resourcesPath === undefined || resourcesPath.length === 0) return process.execPath
+  return join(resourcesPath, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin',
+    process.platform === 'win32' ? 'node.exe' : 'node')
+}
+
+const nodeRuntimeVersions = new Map<string, string>()
+
+/** Read the Node version belonging to the executable that runs plugin lifecycle scripts. */
+export function nodeRuntimeVersion(appExecutable: string): string {
+  const cached = nodeRuntimeVersions.get(appExecutable)
+  if (cached !== undefined) return cached
+  let version = appExecutable === process.execPath ? process.version : ''
+  if (version.length === 0) {
+    const result = spawnSync(appExecutable, ['--version'], {
+      encoding: 'utf8', timeout: 10_000, windowsHide: true,
+    })
+    const reported = (result.stdout ?? '').trim()
+    if (result.error === undefined && result.status === 0 && /^v\d+\.\d+\.\d+/u.test(reported)) {
+      version = reported
+    }
+  }
+  version = version.replace(/^v/u, '')
+  if (version.length === 0) {
+    throw new Error(`dsh-plugin-desktop: cannot determine the Node runtime version of ${appExecutable}`)
+  }
+  nodeRuntimeVersions.set(appExecutable, version)
+  return version
+}
+
 /** Inputs used to install one app-local pnpm command environment. */
 export interface DesktopPnpmRuntimeOptions {
   /** Host platform selecting POSIX or Windows command shims. */
   platform: NodeJS.Platform
-  /** Electron executable reused in RunAsNode mode. */
+  /** Packaged Node executable running pnpm and its lifecycle scripts. */
   appExecutable: string
-  /** Packaged pnpm JavaScript entry executable by Electron RunAsNode, including an ASAR logical path. */
+  /** Packaged pnpm JavaScript entry run by Node, including an ASAR logical path. */
   pnpmBinPath: string
-  /** Electron version used when pnpm installs native dependencies. */
-  electronVersion: string
+  /** Node version used when pnpm installs native dependencies. */
+  nodeVersion?: string
+  /** @deprecated Compatibility input for callers not yet migrated to nodeVersion. */
+  electronVersion?: string
   /** Private application-owned directory receiving generated files. */
   stateDir: string
   /** Parent environment whose PATH is updated; defaults to `process.env`. */
@@ -337,19 +373,16 @@ function installRuntimeGeneration(stateDir: string, plan: RuntimeGenerationPlan)
   return { root, obsoletePathDirectories }
 }
 
-/** Keep descendants in Node mode on Windows, where the private shim is a non-executable batch file. */
+/** Record the runtime identity inherited by every pnpm descendant. */
 function clearEnvironmentModule(platform: NodeJS.Platform): string {
   if (platform === 'win32') {
     return [
-      '// process.execPath is the Electron executable; its Node descendants must retain RunAsNode.',
+      '// process.execPath is the packaged Node executable; descendants inherit it unchanged.',
       '',
     ].join('\n')
   }
   return [
     `process.execPath = require('node:path').join(__dirname, 'node-bin', 'node')`,
-    `for (const name of Object.keys(process.env)) {`,
-    `  if (name.toUpperCase() === '${RUN_AS_NODE}') delete process.env[name]`,
-    '}',
     '',
   ].join('\n')
 }
@@ -358,10 +391,7 @@ function clearEnvironmentModule(platform: NodeJS.Platform): string {
 function posixNodeShim(appExecutable: string): string {
   return [
     '#!/bin/sh',
-    'runtime_node_bin_dir=${0%/*}',
-    'runtime_private_dir=${runtime_node_bin_dir%/*}',
-    'runtime_clear_environment="$runtime_private_dir/clear-env.cjs"',
-    `${RUN_AS_NODE}=1 exec ${quoteSh(appExecutable)} --require "$runtime_clear_environment" "$@"`,
+    `exec ${quoteSh(appExecutable)} "$@"`,
     '',
   ].join('\n')
 }
@@ -375,15 +405,13 @@ function posixPnpmShim(options: DesktopPnpmRuntimeOptions): string {
     'runtime_private_dir="$runtime_root_dir/private"',
     'runtime_node_bin_dir="$runtime_private_dir/node-bin"',
     'runtime_node_shim="$runtime_node_bin_dir/node"',
-    'runtime_clear_environment="$runtime_private_dir/clear-env.cjs"',
     [
       'PATH="$runtime_node_bin_dir:${PATH:-}"',
       'NODE="$runtime_node_shim"',
-      `${RUN_AS_NODE}=1`,
-      'npm_config_runtime=electron',
-      `npm_config_target=${quoteSh(options.electronVersion)}`,
-      `npm_config_disturl=${quoteSh(ELECTRON_HEADERS_URL)}`,
-      `exec ${quoteSh(options.appExecutable)} --require "$runtime_clear_environment" ${quoteSh(options.pnpmBinPath)} ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} "$@"`,
+      'npm_config_runtime=node',
+      `npm_config_target=${quoteSh(options.nodeVersion ?? options.electronVersion ?? '')}`,
+      `npm_config_disturl=${quoteSh(NODE_HEADERS_URL)}`,
+      `exec ${quoteSh(options.appExecutable)} ${quoteSh(options.pnpmBinPath)} ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} "$@"`,
     ].join(' '),
     '',
   ].join('\n')
@@ -420,9 +448,7 @@ function windowsNodeShim(appExecutable: string): string {
     '@echo off',
     'setlocal DisableDelayedExpansion',
     ...windowsCodePagePrologue(),
-    'set "DSH_RUNTIME_PRIVATE=%~dp0.."',
-    `set "${RUN_AS_NODE}=1"`,
-    `${quoteBatchWord(appExecutable)} --require "%DSH_RUNTIME_PRIVATE%\\clear-env.cjs" %*`,
+    `${quoteBatchWord(appExecutable)} %*`,
     ...windowsCodePageEpilogue(),
     '',
   ].join('\r\n')
@@ -439,11 +465,10 @@ function windowsPnpmShim(options: DesktopPnpmRuntimeOptions): string {
     'set "DSH_RUNTIME_NODE_BIN=%DSH_RUNTIME_PRIVATE%\\node-bin"',
     'set "PATH=%DSH_RUNTIME_NODE_BIN%;%PATH%"',
     'set "NODE=%DSH_RUNTIME_NODE_BIN%\\node.cmd"',
-    `set "${RUN_AS_NODE}=1"`,
-    'set "npm_config_runtime=electron"',
-    `set "npm_config_target=${escapeBatchSetValue(options.electronVersion)}"`,
-    `set "npm_config_disturl=${ELECTRON_HEADERS_URL}"`,
-    `${quoteBatchWord(options.appExecutable)} --require "%DSH_RUNTIME_PRIVATE%\\clear-env.cjs" ${quoteBatchWord(options.pnpmBinPath)} ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} %*`,
+    'set "npm_config_runtime=node"',
+    `set "npm_config_target=${escapeBatchSetValue(options.nodeVersion ?? options.electronVersion ?? '')}"`,
+    `set "npm_config_disturl=${NODE_HEADERS_URL}"`,
+    `${quoteBatchWord(options.appExecutable)} ${quoteBatchWord(options.pnpmBinPath)} ${PNPM_IGNORE_MINIMUM_RELEASE_AGE} %*`,
     ...windowsCodePageEpilogue(),
     '',
   ].join('\r\n')
@@ -455,7 +480,6 @@ function windowsDshShim(options: DesktopDshRuntimeOptions): string {
     '@echo off',
     'setlocal DisableDelayedExpansion',
     ...windowsCodePagePrologue(),
-    `set "${RUN_AS_NODE}=1"`,
     `set "${DEFAULT_PROFILE}=${escapeBatchSetValue(options.profileName)}"`,
     `set "${DSH_HOME}=${escapeBatchSetValue(options.homeDir)}"`,
     `${quoteBatchWord(options.appExecutable)} --expose-internals ${quoteBatchWord(options.dshBootstrapPath)} %*`,
@@ -586,7 +610,7 @@ export function installDesktopPnpmRuntime(options: DesktopPnpmRuntimeOptions): D
   for (const [label, value] of [
     ['application executable', options.appExecutable],
     ['pnpm entry', options.pnpmBinPath],
-    ['Electron version', options.electronVersion],
+    ['Node version', options.nodeVersion ?? options.electronVersion ?? ''],
     ['state directory', options.stateDir],
   ] as const) assertScriptValue(label, value)
 

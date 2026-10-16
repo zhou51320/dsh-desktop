@@ -35,17 +35,16 @@ export function createDesktopProfileBoot(prepared: PreparedDesktopProfile, pnpm:
     telemetryDisabledEnv: options.telemetryDisabled,
     packageManager: {
       command: pnpm.appExecutable,
-      args: ['--import', pathToFileURL(pnpm.clearEnvironmentPath).href, pnpm.pnpmBinPath,
+      args: [pnpm.pnpmBinPath,
         ...withDesktopPnpmPolicy([])],
       env: {
         PATH: [pnpm.nodeBinDir, inheritedPath].filter(Boolean).join(delimiter),
         NODE: pnpm.nodeShimPath,
-        ELECTRON_RUN_AS_NODE: '1',
         DSH_HOME: prepared.homeDir,
         CI: 'true',
-        npm_config_runtime: 'electron',
-        npm_config_target: pnpm.electronVersion,
-        npm_config_disturl: 'https://electronjs.org/headers',
+        npm_config_runtime: 'node',
+        npm_config_target: pnpm.nodeVersion ?? pnpm.electronVersion ?? '',
+        npm_config_disturl: 'https://nodejs.org/download/release',
       },
     },
     // The pinned app-boot patch delegates both manager operations and HMR here.

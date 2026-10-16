@@ -53,7 +53,7 @@ it('rereads user patches while preserving the Desktop composition and root file'
   expect(ctx.profileContext.packageManager?.command).toBe(process.execPath)
   expect(ctx.profileContext.packageManager?.args).toContain('--config.minimumReleaseAge=0')
   expect(ctx.profileContext.packageManager?.env.DSH_HOME).toBe(home)
-  expect(ctx.profileContext.packageManager?.env.ELECTRON_RUN_AS_NODE).toBe('1')
+  expect(ctx.profileContext.packageManager?.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
   expect(readFileSync(prepared.profile.patchPath, 'utf8')).toContain('disabled: true')
 })
 

@@ -53,7 +53,6 @@ describe('pre-Host recovery plugin uninstall command', () => {
     ])
     expect(environment).toMatchObject({
       NODE: options.nodeShimPath,
-      ELECTRON_RUN_AS_NODE: '1',
       DSH_HOME: options.homeDir,
       KEEP: 'value',
     })

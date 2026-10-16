@@ -1,9 +1,10 @@
-/** Utility-process entrypoint. No BrowserWindow or Electron main APIs are imported here. */
+/** Host entrypoint started by the Desktop supervisor. No BrowserWindow or Electron main APIs load here. */
 import { installFailLoud } from '@deepseek-ai/dsh-app-boot'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentLayerInput } from '@deepseek-ai/dsh-launch-environment'
+import { inspect } from 'node:util'
 import { desktopProxyEnvLookup } from './system-proxy.ts'
-import { HostRpc } from './host-rpc.ts'
+import { HostRpc, type HostPort } from './host-rpc.ts'
 import { createHostRuntime, type RuntimeSnapshot } from './host-runtime-bridge.ts'
 import { bootDesktopHost, type DesktopHostOptions } from './host-bootstrap.ts'
 import { createDesktopBrowserAccess } from './desktop-browser-access.ts'
@@ -15,16 +16,45 @@ import { DESKTOP_PACKAGE_NAME } from './product-identity.ts'
 // The Host lists and reads user workspaces; see asar-archive-policy.ts.
 disableAsarArchiveView(import.meta.url)
 
-const parentPort = process.parentPort
-if (!parentPort) throw new Error('DSH Host must be started by the Desktop supervisor')
-const rpc = new HostRpc({
-  send: message => parentPort.postMessage(message),
-  listen: receive => {
-    const listener = (event: { data: unknown }) => receive(event.data)
-    parentPort.on('message', listener)
-    return () => { parentPort.removeListener('message', listener) }
-  },
-}, 120_000)
+/** Adapt stdin/stdout to the supervisor RPC contract while reserving stdout for protocol frames. */
+function stdioPort(): HostPort {
+  const receivers: ((message: unknown) => void)[] = []
+  let buffer = ''
+  process.stdin.setEncoding('utf8')
+  process.stdin.on('data', (chunk: string) => {
+    buffer += chunk
+    for (;;) {
+      const newline = buffer.indexOf('\n')
+      if (newline === -1) return
+      const line = buffer.slice(0, newline)
+      buffer = buffer.slice(newline + 1)
+      if (line.trim().length === 0) continue
+      try {
+        const message = JSON.parse(line) as unknown
+        for (const receive of receivers) receive(message)
+      } catch (cause) {
+        process.stderr.write(`dsh-plugin-desktop: discarding malformed supervisor message: ${cause instanceof Error ? cause.message : String(cause)}\n`)
+      }
+    }
+  })
+  return {
+    send: message => { process.stdout.write(`${JSON.stringify(message)}\n`) },
+    listen: receive => {
+      receivers.push(receive)
+      return () => {
+        const at = receivers.indexOf(receive)
+        if (at !== -1) receivers.splice(at, 1)
+      }
+    },
+  }
+}
+
+const logToStderr = (...args: unknown[]): void => {
+  process.stderr.write(`${args.map(value => (typeof value === 'string' ? value : inspect(value))).join(' ')}\n`)
+}
+console.log = logToStderr
+console.info = logToStderr
+const rpc = new HostRpc(stdioPort(), 120_000)
 let host: DesktopStartupGenerationHost | undefined
 let inspectServices = () => ({ aaRuntime: false, aaOnboarding: false })
 rpc.handle('status', () => ({ pid: process.pid, services: inspectServices() }))

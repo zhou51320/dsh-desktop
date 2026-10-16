@@ -7,7 +7,7 @@ import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024
-const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
+const NODE_HEADERS_URL = 'https://nodejs.org/download/release'
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
 
 export interface RecoveryPluginUninstallOptions {
@@ -20,7 +20,9 @@ export interface RecoveryPluginUninstallOptions {
   readonly nodeShimPath: string
   /** Directory containing Desktop's packaged pnpm command shim. */
   readonly pnpmBinDir: string
-  readonly electronVersion: string
+  readonly nodeVersion?: string
+  /** @deprecated Compatibility input for callers not yet migrated to nodeVersion. */
+  readonly electronVersion?: string
   readonly packageName: string
   readonly signal?: AbortSignal
   readonly timeoutMs?: number
@@ -69,6 +71,7 @@ export function recoveryPluginEnvironment(
     | 'nodeBinDir'
     | 'nodeShimPath'
     | 'pnpmBinDir'
+    | 'nodeVersion'
     | 'electronVersion'
     | 'environment'>,
   platform: NodeJS.Platform = process.platform,
@@ -84,12 +87,11 @@ export function recoveryPluginEnvironment(
     .filter(value => value.length > 0)
     .join(platform === 'win32' ? ';' : ':')
   environment.NODE = options.nodeShimPath
-  environment.ELECTRON_RUN_AS_NODE = '1'
   environment.DSH_HOME = options.homeDir
   environment.CI = 'true'
-  environment.npm_config_runtime = 'electron'
-  environment.npm_config_target = options.electronVersion
-  environment.npm_config_disturl = ELECTRON_HEADERS_URL
+  environment.npm_config_runtime = 'node'
+  environment.npm_config_target = options.nodeVersion ?? options.electronVersion
+  environment.npm_config_disturl = NODE_HEADERS_URL
   return environment
 }
 
@@ -134,8 +136,9 @@ export async function removeRecoveryPlugin(
     ['Node command', options.nodeShimPath],
     ['pnpm command directory', options.pnpmBinDir],
   ] as const) assertAbsolutePath(label, value)
-  if (options.electronVersion.length === 0 || options.electronVersion.includes('\0')) {
-    throw new RecoveryPluginUninstallError('recovery plugin uninstall Electron version is invalid')
+  const runtimeVersion = options.nodeVersion ?? options.electronVersion ?? ''
+  if (runtimeVersion.length === 0 || runtimeVersion.includes('\0')) {
+    throw new RecoveryPluginUninstallError('recovery plugin uninstall Node version is invalid')
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxBuffer = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES

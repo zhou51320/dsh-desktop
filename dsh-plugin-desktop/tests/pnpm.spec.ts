@@ -164,8 +164,6 @@ describe('desktop pnpm execution service', () => {
     expect(target.spawn).toHaveBeenCalledWith({
       argv: [
         bootstrap().appExecutable,
-        '--import',
-        pathToFileURL(bootstrap().clearEnvironmentPath).href,
         bootstrap().pnpmBinPath,
         '--config.minimumReleaseAge=0',
         'add',
@@ -179,12 +177,11 @@ describe('desktop pnpm execution service', () => {
       env: {
         PATH: `${bootstrap().nodeBinDir}${delimiter}${globalThis.process.env.PATH ?? ''}`,
         NODE: bootstrap().nodeShimPath,
-        ELECTRON_RUN_AS_NODE: '1',
         DSH_HOME: bootstrap().homeDir,
         CI: 'true',
-        npm_config_runtime: 'electron',
+        npm_config_runtime: 'node',
         npm_config_target: '43.4.0',
-        npm_config_disturl: 'https://electronjs.org/headers',
+        npm_config_disturl: 'https://nodejs.org/download/release',
       },
     })
     operation.cancel()

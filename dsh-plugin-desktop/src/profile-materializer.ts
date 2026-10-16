@@ -3,11 +3,10 @@
 import { spawn as childSpawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { delimiter, isAbsolute } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 
-const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
+const NODE_HEADERS_URL = 'https://nodejs.org/download/release'
 const DEFAULT_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024
 const TERMINATION_GRACE_MS = 3_000
@@ -22,7 +21,9 @@ export interface ProfileMaterializerOptions {
   readonly nodeShimPath: string
   readonly homeDir: string
   readonly profileDir: string
-  readonly electronVersion: string
+  readonly nodeVersion?: string
+  /** @deprecated Compatibility input for callers not yet migrated to nodeVersion. */
+  readonly electronVersion?: string
   readonly signal?: AbortSignal
   readonly timeoutMs?: number
   readonly maxOutputBytes?: number
@@ -101,7 +102,6 @@ function inheritedPath(): string {
 const MATERIALIZER_ENV_KEYS = [
   'PATH',
   'NODE',
-  'ELECTRON_RUN_AS_NODE',
   'DSH_HOME',
   'CI',
   'npm_config_runtime',
@@ -222,8 +222,9 @@ export async function materializeProfile(
     ['Harness home', options.homeDir],
     ['profile directory', options.profileDir],
   ] as const) assertAbsolutePath(label, value)
-  if (options.electronVersion.length === 0 || options.electronVersion.includes('\0')) {
-    throw new ProfileMaterializationError('profile materializer Electron version must not be empty or contain NUL')
+  const runtimeVersion = options.nodeVersion ?? options.electronVersion ?? ''
+  if (runtimeVersion.length === 0 || runtimeVersion.includes('\0')) {
+    throw new ProfileMaterializationError('profile materializer Node version must not be empty or contain NUL')
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
@@ -233,8 +234,6 @@ export async function materializeProfile(
 
   const argv = [
     options.appExecutable,
-    '--import',
-    pathToFileURL(options.clearEnvironmentPath).href,
     options.pnpmBinPath,
     PNPM_IGNORE_MINIMUM_RELEASE_AGE,
     'install',
@@ -245,12 +244,11 @@ export async function materializeProfile(
     ...materializerParentEnv(options.scrubParent ?? scrubbedParentEnv),
     PATH: path.length === 0 ? options.nodeBinDir : `${options.nodeBinDir}${delimiter}${path}`,
     NODE: options.nodeShimPath,
-    ELECTRON_RUN_AS_NODE: '1',
     DSH_HOME: options.homeDir,
     CI: 'true',
-    npm_config_runtime: 'electron',
-    npm_config_target: options.electronVersion,
-    npm_config_disturl: ELECTRON_HEADERS_URL,
+    npm_config_runtime: 'node',
+    npm_config_target: runtimeVersion,
+    npm_config_disturl: NODE_HEADERS_URL,
   }
   const spawn = options.spawn ?? childSpawn
   const child = spawn(options.appExecutable, argv.slice(1), {

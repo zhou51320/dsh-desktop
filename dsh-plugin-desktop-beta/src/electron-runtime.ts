@@ -10,6 +10,7 @@ import {
 } from 'electron'
 import { configureDeveloperLogging, type DiagnosticPreferences } from './developer-logging.ts'
 import { spawn } from 'node:child_process'
+import { bundledNodeExecutable, nodeRuntimeVersion } from './desktop-runtime-environment.ts'
 import { RemoteControlOffer, remoteControlOfferCopy } from './remote-control-offer.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -506,16 +507,13 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       if (spec === undefined) {
         throw new Error('dsh-plugin-desktop: terminal profile is not configured')
       }
-      const electronVersion = process.versions.electron
-      if (electronVersion === undefined) {
-        throw new Error('dsh-plugin-desktop: terminal requires the Electron runtime version')
-      }
+      const appExecutable = bundledNodeExecutable(process.resourcesPath)
       openDesktopTerminal({
         platform: this.platform,
-        appExecutable: process.execPath,
+        appExecutable,
         dshBootstrapPath: fileURLToPath(new URL('./desktop-cli.js', import.meta.url)),
         pnpmBinPath: packagedDependencyPath(import.meta.url, 'pnpm/bin/pnpm.mjs'),
-        electronVersion,
+        nodeVersion: nodeRuntimeVersion(appExecutable),
         profileName: spec.profileName,
         productVersion: PRODUCT_VERSION,
         profileDir: spec.profileDir,

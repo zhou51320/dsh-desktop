@@ -1,7 +1,6 @@
 /** Desktop-owned pnpm execution capability for the active DSH Profile. */
 
 import { delimiter, isAbsolute } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import type { Readable } from 'node:stream'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {
@@ -13,7 +12,7 @@ import { assertDesktopProfileName } from './profile-manager.ts'
 import { withDesktopPnpmPolicy } from './pnpm-policy.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
-const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
+const NODE_HEADERS_URL = 'https://nodejs.org/download/release'
 const TERMINATION_GRACE_MS = 3_000
 
 /** Launcher-resolved values used by the active Desktop pnpm generation. */
@@ -23,7 +22,9 @@ export interface DesktopPnpmBootstrap {
   readonly homeDir: string
   readonly appExecutable: string
   readonly pnpmBinPath: string
-  readonly electronVersion: string
+  readonly nodeVersion?: string
+  /** @deprecated Compatibility input for callers not yet migrated to nodeVersion. */
+  readonly electronVersion?: string
   readonly nodeBinDir: string
   readonly nodeShimPath: string
   readonly clearEnvironmentPath: string
@@ -126,8 +127,9 @@ function validateBootstrap(bootstrap: DesktopPnpmBootstrap): void {
     ['environment preloader', bootstrap.clearEnvironmentPath],
     ['DSH bootstrap', bootstrap.dshBootstrapPath],
   ] as const) assertAbsolutePath(label, value)
-  if (bootstrap.electronVersion.length === 0 || bootstrap.electronVersion.includes('\0')) {
-    throw new Error(`${BIN_NAME}: desktop pnpm Electron version must not be empty or contain NUL`)
+  const runtimeVersion = bootstrap.nodeVersion ?? bootstrap.electronVersion ?? ''
+  if (runtimeVersion.length === 0 || runtimeVersion.includes('\0')) {
+    throw new Error(`${BIN_NAME}: desktop pnpm Node version must not be empty or contain NUL`)
   }
 }
 
@@ -155,8 +157,6 @@ class DesktopPnpmService extends Service implements DesktopPnpm {
     return this.start({
       argv: [
         this.bootstrap.appExecutable,
-        '--import',
-        pathToFileURL(this.bootstrap.clearEnvironmentPath).href,
         this.bootstrap.pnpmBinPath,
         ...args,
       ],
@@ -214,12 +214,11 @@ class DesktopPnpmService extends Service implements DesktopPnpm {
           ? this.bootstrap.nodeBinDir
           : `${this.bootstrap.nodeBinDir}${delimiter}${inherited}`,
         NODE: this.bootstrap.nodeShimPath,
-        ELECTRON_RUN_AS_NODE: '1',
         DSH_HOME: this.bootstrap.homeDir,
         CI: 'true',
-        npm_config_runtime: 'electron',
-        npm_config_target: this.bootstrap.electronVersion,
-        npm_config_disturl: ELECTRON_HEADERS_URL,
+        npm_config_runtime: 'node',
+        npm_config_target: this.bootstrap.nodeVersion ?? this.bootstrap.electronVersion,
+        npm_config_disturl: NODE_HEADERS_URL,
       },
     }
     const child = this.ctx.subprocess.spawn(spec)

@@ -144,9 +144,9 @@ describe('desktop terminal environment', () => {
     expect(dshShim).toContain('"$@"')
     expect(dshShim).not.toContain('npm_config_')
     const pnpmShim = readFileSync(launch.pnpmShimPath, 'utf8')
-    expect(pnpmShim).toContain('ELECTRON_RUN_AS_NODE=1 npm_config_runtime=electron')
+    expect(pnpmShim).toContain('npm_config_runtime=node')
     expect(pnpmShim).toContain("npm_config_target='43.4.0'")
-    expect(pnpmShim).toContain("npm_config_disturl='https://electronjs.org/headers'")
+    expect(pnpmShim).toContain("npm_config_disturl='https://nodejs.org/download/release'")
     expect(pnpmShim.match(/--config\.minimumReleaseAge=0/gu)).toHaveLength(1)
     expect(pnpmShim).toContain('--config.minimumReleaseAge=0 "$@"')
     const nodeShim = readFileSync(launch.nodeShimPath, 'utf8')
@@ -232,9 +232,9 @@ describe('desktop terminal environment', () => {
       '"%DSH_DESKTOP_APP_EXECUTABLE%" --expose-internals "%DSH_DESKTOP_DSH_BOOTSTRAP%"',
     ].join('\r\n'))
     const pnpmShim = readFileSync(launch.pnpmShimPath, 'utf8')
-    expect(pnpmShim).toContain('set "npm_config_runtime=electron"')
+    expect(pnpmShim).toContain('set "npm_config_runtime=node"')
     expect(pnpmShim).toContain('set "npm_config_target=%DSH_DESKTOP_ELECTRON_VERSION%"')
-    expect(pnpmShim).toContain('set "npm_config_disturl=https://electronjs.org/headers"')
+    expect(pnpmShim).toContain('set "npm_config_disturl=https://nodejs.org/download/release"')
     expect(pnpmShim.match(/--config\.minimumReleaseAge=0/gu)).toHaveLength(1)
     expect(pnpmShim).toContain('--config.minimumReleaseAge=0 %*')
     expect(readFileSync(launch.nodeShimPath, 'utf8')).toContain(

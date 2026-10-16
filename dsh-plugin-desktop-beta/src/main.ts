@@ -38,8 +38,10 @@ import {
 } from './desktop-installer-quit.ts'
 import { createDesktopBrowserAccess } from './desktop-browser-access.ts'
 import {
+  bundledNodeExecutable,
   installDesktopDshRuntime,
   installDesktopPnpmRuntime,
+  nodeRuntimeVersion,
 } from './desktop-runtime-environment.ts'
 import { desktopProductVersion, ElectronDesktopRuntime } from './electron-runtime.ts'
 import { getOrCreateDesktopInstallationId } from './desktop-installation-id.ts'
@@ -805,16 +807,14 @@ async function start(): Promise<void> {
     startupStage = 'runtime-bootstrap'
     lifecycleRecorder.transitionStartupStage(startupStage)
     const environment = loadLayeredEnv(BIN_NAME, process.cwd())
-    const electronVersion = process.versions.electron
-    if (electronVersion === undefined) {
-      throw new Error(`${BIN_NAME}: plugin runtime requires the Electron runtime version`)
-    }
+    const appExecutable = bundledNodeExecutable(process.resourcesPath)
+    const nodeVersion = nodeRuntimeVersion(appExecutable)
     const pnpmBinPath = packagedDependencyPath(import.meta.url, 'pnpm/bin/pnpm.mjs')
     const pnpmRuntime = installDesktopPnpmRuntime({
       platform: process.platform,
-      appExecutable: process.execPath,
+      appExecutable,
       pnpmBinPath,
-      electronVersion,
+      nodeVersion,
       stateDir: join(app.getPath('userData'), 'runtime-commands'),
       environment: process.env,
     })
@@ -1239,7 +1239,7 @@ async function start(): Promise<void> {
         uninstallPlugin: async packageName => {
           try {
             await removeRecoveryPlugin({
-              appExecutable: process.execPath,
+              appExecutable,
               dshBootstrapPath,
               profileName: activeProfileName,
               profileDir: activeProfileDir,
@@ -1247,7 +1247,7 @@ async function start(): Promise<void> {
               nodeBinDir: pnpmRuntime.nodeBinDir,
               nodeShimPath: pnpmRuntime.nodeShimPath,
               pnpmBinDir: pnpmRuntime.pathDir,
-              electronVersion,
+              nodeVersion,
               packageName,
             })
           } catch (cause) {
@@ -1269,14 +1269,14 @@ async function start(): Promise<void> {
           if (!result.dependencyMaterializationRequired) return
           try {
             await materializeProfile({
-              appExecutable: process.execPath,
+              appExecutable,
               clearEnvironmentPath: pnpmRuntime.clearEnvironmentPath,
               pnpmBinPath,
               nodeBinDir: pnpmRuntime.nodeBinDir,
               nodeShimPath: pnpmRuntime.nodeShimPath,
               homeDir,
               profileDir: activeProfileDir,
-              electronVersion,
+              nodeVersion,
             })
           } catch (cause) {
             const detail = maskSecrets(formatProfileMaterializationFailure(cause))
@@ -1537,7 +1537,7 @@ async function start(): Promise<void> {
     const dshRuntime = process.platform === 'win32'
       ? installDesktopDshRuntime({
           platform: process.platform,
-          appExecutable: process.execPath,
+          appExecutable,
           dshBootstrapPath,
           profileName: activeProfileName,
           homeDir,
@@ -1550,14 +1550,14 @@ async function start(): Promise<void> {
       electronLogger.error(`${BIN_NAME}: migrating legacy Profile dependency layout with packaged pnpm`)
       try {
         await materializeProfile({
-          appExecutable: process.execPath,
+          appExecutable,
           clearEnvironmentPath: pnpmRuntime.clearEnvironmentPath,
           pnpmBinPath,
           nodeBinDir: pnpmRuntime.nodeBinDir,
           nodeShimPath: pnpmRuntime.nodeShimPath,
           homeDir,
           profileDir: prepared.profile.dir,
-          electronVersion,
+          nodeVersion,
           updateLockfile: true,
         })
         prepared = prepareDesktopProfile(
@@ -1615,9 +1615,9 @@ async function start(): Promise<void> {
       activeProfileName,
       activeProfileDir: prepared.profile.dir,
       homeDir,
-      appExecutable: process.execPath,
+      appExecutable,
       pnpmBinPath,
-      electronVersion,
+      nodeVersion,
       nodeBinDir: pnpmRuntime.nodeBinDir,
       nodeShimPath: pnpmRuntime.nodeShimPath,
       clearEnvironmentPath: pnpmRuntime.clearEnvironmentPath,

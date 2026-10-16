@@ -113,20 +113,17 @@ describe('desktop Host pnpm runtime', () => {
     expect(pnpm).toContain('runtime_root_dir=${runtime_public_dir%/*}')
     expect(pnpm).toContain('PATH="$runtime_node_bin_dir:${PATH:-}"')
     expect(pnpm).toContain('NODE="$runtime_node_shim"')
-    expect(pnpm).toContain('ELECTRON_RUN_AS_NODE=1 npm_config_runtime=electron')
+    expect(pnpm).toContain('npm_config_runtime=node')
     expect(pnpm).toContain("npm_config_target='43.4.0'")
-    expect(pnpm).toContain("npm_config_disturl='https://electronjs.org/headers'")
+    expect(pnpm).toContain("npm_config_disturl='https://nodejs.org/download/release'")
     expect(pnpm.match(/--config\.minimumReleaseAge=0/gu)).toHaveLength(1)
     expect(pnpm).toContain('--config.minimumReleaseAge=0 "$@"')
-    expect(pnpm).toContain('--require "$runtime_clear_environment"')
-    expect(pnpm.indexOf('--require "$runtime_clear_environment"')).toBeLessThan(pnpm.indexOf('pnpm/bin/pnpm.mjs'))
     const node = readFileSync(installation.nodeShimPath, 'utf8')
-    expect(node).toContain(`ELECTRON_RUN_AS_NODE=1 exec`)
-    expect(node).toContain('--require "$runtime_clear_environment" "$@"')
+    expect(node).toContain('exec ')
     expect(node).not.toContain('npm_config_')
     const clearEnvironment = readFileSync(installation.clearEnvironmentPath, 'utf8')
     expect(clearEnvironment).toContain("process.execPath = require('node:path').join(__dirname, 'node-bin', 'node')")
-    expect(clearEnvironment).toContain("name.toUpperCase() === 'ELECTRON_RUN_AS_NODE'")
+    expect(clearEnvironment).not.toContain("name.toUpperCase() === 'ELECTRON_RUN_AS_NODE'")
 
     expect(environment).toEqual({
       ...original,
@@ -181,12 +178,12 @@ describe('desktop Host pnpm runtime', () => {
     expect(JSON.parse(result.stdout)).toEqual({
       // Node resolves the preload's __dirname through symlinks (macOS /var -> /private/var).
       execPath: realpathSync(installation.nodeShimPath),
-      runAsNode: [],
+      runAsNode: ['ELECTRON_RUN_AS_NODE', 'electron_run_as_node'],
     })
     installation.dispose()
   })
 
-  it('scopes Electron ABI settings to the pnpm process tree', () => {
+  it('scopes Node ABI settings to the pnpm process tree', () => {
     const root = temporaryDirectory()
     const stateDir = join(root, 'runtime')
     const captureEntry = join(root, 'capture.mjs')
@@ -230,10 +227,10 @@ describe('desktop Host pnpm runtime', () => {
     const capture = JSON.parse(readFileSync(captureOutput, 'utf8')) as Record<string, unknown>
     expect(capture).toMatchObject({
       ignoresMinimumReleaseAge: true,
-      runAsNode: process.platform === 'win32' ? ['ELECTRON_RUN_AS_NODE'] : [],
-      runtime: 'electron',
+      runAsNode: [],
+      runtime: 'node',
       target: '43.4.0',
-      disturl: 'https://electronjs.org/headers',
+      disturl: 'https://nodejs.org/download/release',
     })
     expect(resolve(String(capture.node))).toBe(resolve(installation.nodeShimPath))
     const [capturedNodeBinDir, ...capturedPath] = String(capture.path).split(pathDelimiter)
@@ -319,18 +316,13 @@ describe('desktop Host pnpm runtime', () => {
     expect(pnpm).toContain('set "DSH_RUNTIME_ROOT=%~dp0.."')
     expect(pnpm).toContain('set "PATH=%DSH_RUNTIME_NODE_BIN%;%PATH%"')
     expect(pnpm).toContain('set "NODE=%DSH_RUNTIME_NODE_BIN%\\node.cmd"')
-    expect(pnpm).toContain('set "ELECTRON_RUN_AS_NODE=1"')
-    expect(pnpm).toContain('set "npm_config_runtime=electron"')
+    expect(pnpm).not.toContain('set "ELECTRON_RUN_AS_NODE=1"')
+    expect(pnpm).toContain('set "npm_config_runtime=node"')
     expect(pnpm).toContain('set "npm_config_target=43.4.0"')
-    expect(pnpm).toContain('--require "%DSH_RUNTIME_PRIVATE%\\clear-env.cjs"')
-    expect(pnpm.indexOf('--require "%DSH_RUNTIME_PRIVATE%\\clear-env.cjs"')).toBeLessThan(
-      pnpm.indexOf('pnpm\\bin\\pnpm.mjs'),
-    )
     expect(pnpm.match(/--config\.minimumReleaseAge=0/gu)).toHaveLength(1)
     expect(pnpm).toContain('--config.minimumReleaseAge=0 %*')
     const node = readFileSync(installation.nodeShimPath, 'utf8')
-    expect(node).toContain('set "ELECTRON_RUN_AS_NODE=1"')
-    expect(node).toContain('--require "%DSH_RUNTIME_PRIVATE%\\clear-env.cjs" %*')
+    expect(node).not.toContain('ELECTRON_RUN_AS_NODE')
     expect(node).not.toContain('npm_config_')
     for (const shim of [pnpm, node]) expectCodePagePinnedAheadOfEveryPath(shim)
     expect(readFileSync(installation.clearEnvironmentPath, 'utf8')).not.toContain(

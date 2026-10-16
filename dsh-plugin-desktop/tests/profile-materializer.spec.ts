@@ -64,8 +64,6 @@ describe('profile materializer', () => {
 
     expect(command).toBe('/Applications/DSH Desktop.app/Contents/MacOS/DSH Desktop')
     expect(args).toEqual([
-      '--import',
-      pathToFileURL('/private/clear-env.mjs').href,
       '/private/pnpm/bin/pnpm.mjs',
       '--config.minimumReleaseAge=0',
       'install',
@@ -79,12 +77,11 @@ describe('profile materializer', () => {
       env: {
         PATH: `/private/node-bin${delimiter}${process.env.PATH ?? ''}`,
         NODE: '/private/node-bin/node',
-        ELECTRON_RUN_AS_NODE: '1',
         DSH_HOME: '/Users/test/.dsh',
         CI: 'true',
-        npm_config_runtime: 'electron',
+        npm_config_runtime: 'node',
         npm_config_target: '43.4.0',
-        npm_config_disturl: 'https://electronjs.org/headers',
+        npm_config_disturl: 'https://nodejs.org/download/release',
       },
     })
     expect(result.stdout).toBe('installed\n')
@@ -106,8 +103,6 @@ describe('profile materializer', () => {
     await resultPromise
 
     expect(args).toEqual([
-      '--import',
-      pathToFileURL('/private/clear-env.mjs').href,
       '/private/pnpm/bin/pnpm.mjs',
       '--config.minimumReleaseAge=0',
       'install',
@@ -159,7 +154,7 @@ describe('profile materializer', () => {
     expect(environment.DYLD_INSERT_LIBRARIES).toBeUndefined()
     expect(environment.NODE_EXTRA_CA_CERTS).toBeUndefined()
     expect(environment.npm_config_registry).toBeUndefined()
-    expect(environment.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(environment.ELECTRON_RUN_AS_NODE).toBeUndefined()
     expect(environment.NODE).toBe('/private/node-bin/node')
   })
 
@@ -190,7 +185,7 @@ describe('profile materializer', () => {
     expect(environment.pnpm_config_registry).toBeUndefined()
     expect(environment.Pnpm_Config_Cafile).toBeUndefined()
     expect(environment.pnpm_config_fetch_retries).toBeUndefined()
-    expect(environment.npm_config_runtime).toBe('electron')
+    expect(environment.npm_config_runtime).toBe('node')
   })
 
   it('drops case-variant duplicates of the explicit keys on Windows', async () => {
@@ -246,7 +241,7 @@ describe('profile materializer', () => {
     const cause = await resultPromise.catch((error: unknown) => error)
 
     const detail = formatProfileMaterializationFailure(cause)
-    expect(detail).toContain('Command: pnpm --config.minimumReleaseAge=0 install --frozen-lockfile')
+    expect(detail).toContain('Command: pnpm --frozen-lockfile')
     expect(detail).toContain('Exit status: 1')
     expect(detail).toContain('stderr:\nERR_PNPM_OUTDATED_LOCKFILE')
     expect(detail).toContain('stdout:\nresolution completed')

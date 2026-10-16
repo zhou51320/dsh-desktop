@@ -1,11 +1,11 @@
 /** Electron owns the child lifetime; the child owns the unchanged DSH Web server. */
-import { createProcessOutputLogging } from './process-output-logging.ts'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { serializeHostEnvironment } from './host-launch-environment.ts'
-import { utilityProcess } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { StringDecoder } from 'node:string_decoder'
-import { HostRpc } from './host-rpc.ts'
+import { HostRpc, type HostPort } from './host-rpc.ts'
+import { bundledNodeExecutable } from './desktop-runtime-environment.ts'
 import { bindNativeRuntime, runtimeSnapshot } from './host-runtime-bridge.ts'
 import type { DesktopHostOptions } from './host-bootstrap.ts'
 import type { DesktopRuntime } from './runtime.ts'
@@ -46,26 +46,18 @@ export function formatUnexpectedHostExit(error: Error, exit: IsolatedHostExit): 
 
 export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Promise<void> {
   const forkedAt = performance.now()
-  const child = utilityProcess.fork(fileURLToPath(new URL('./host-process-entry.js', import.meta.url)), [], {
-    serviceName: 'DSH Host', stdio: 'pipe', cwd: process.cwd(), env: { ...process.env },
+  const child = spawn(bundledNodeExecutable(process.resourcesPath), [
+    fileURLToPath(new URL('./host-process-entry.js', import.meta.url)),
+  ], {
+    stdio: ['pipe', 'pipe', 'pipe'], cwd: process.cwd(), env: { ...process.env }, windowsHide: true,
   })
-  // Keep normal Host logs in its own files; stderr includes bootstrap failures.
-  const stdoutLog = createProcessOutputLogging('stdout', () => child.pid)
-  const stderrLog = createProcessOutputLogging('stderr', () => child.pid)
-  child.stdout?.on('data', (data: Buffer) => { process.stdout.write(data); stdoutLog.write(data) })
-  child.stdout?.once('end', () => stdoutLog.end())
-  child.stderr?.once('end', () => stderrLog.end())
   const stderrDecoder = new StringDecoder('utf8')
   let stderrTail = ''
-  child.stderr?.on('data', (data: Buffer) => {
+  child.stderr.on('data', (data: Buffer) => {
     process.stderr.write(data)
-    stderrLog.write(data)
     stderrTail = (stderrTail + stderrDecoder.write(data)).slice(-HOST_STDERR_TAIL_CHARS)
   })
-  const rpc = new HostRpc({
-    send: message => child.postMessage(message),
-    listen: receive => { child.on('message', receive); return () => { child.removeListener('message', receive) } },
-  }, 120_000)
+  const rpc = new HostRpc(stdioSupervisorPort(child), 120_000)
   const releaseNative = bindNativeRuntime(rpc, options.runtime)
   rpc.handle('certificate', () => options.prepareCertificate())
   rpc.handle('quit', ([code]) => { setImmediate(() => options.requestQuit(code)) })
@@ -74,17 +66,23 @@ export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Pr
   let booted = false
   let resolveExit!: () => void
   const exit = new Promise<void>(resolve => { resolveExit = resolve })
-  child.once('exit', (code) => {
-    stdoutLog.end(); stderrLog.end()
+  child.once('exit', (code, signal) => {
     exited = true
-    rpc.close(`DSH Host exited (${code})`)
+    const exitCode = code ?? 1
+    const reported = code === null ? `signal ${String(signal)}` : String(code)
+    rpc.close(`DSH Host exited (${reported})`)
     resolveExit()
     if (!stopping && booted) {
       options.onFailure(
-        new Error(`DSH Host exited (${code}); restart the application to reconnect`),
-        { exitCode: code, uptimeMs: Math.max(0, performance.now() - forkedAt), stderrTail },
+        new Error(`DSH Host exited (${reported}); restart the application to reconnect`),
+        { exitCode, uptimeMs: Math.max(0, performance.now() - forkedAt), stderrTail },
       )
     }
+  })
+  child.once('error', (cause: Error) => {
+    exited = true
+    rpc.close(`DSH Host failed to start: ${cause.message}`)
+    resolveExit()
   })
   let stopTask: Promise<void> | undefined
   const stop = (): Promise<void> => stopTask ??= (async () => {
@@ -112,5 +110,38 @@ export async function startIsolatedDesktopHost(options: IsolatedHostOptions): Pr
   } catch (cause) {
     await stop()
     throw cause
+  }
+}
+
+/** Adapt one packaged Node child stdio stream to the existing Host RPC protocol. */
+function stdioSupervisorPort(child: ChildProcessWithoutNullStreams): HostPort {
+  const receivers: ((message: unknown) => void)[] = []
+  const decoder = new StringDecoder('utf8')
+  let buffer = ''
+  child.stdout.on('data', (data: Buffer) => {
+    buffer += decoder.write(data)
+    for (;;) {
+      const newline = buffer.indexOf('\n')
+      if (newline === -1) return
+      const line = buffer.slice(0, newline)
+      buffer = buffer.slice(newline + 1)
+      if (line.trim().length === 0) continue
+      try {
+        const message = JSON.parse(line) as unknown
+        for (const receive of receivers) receive(message)
+      } catch (cause) {
+        process.stderr.write(`dsh-plugin-desktop: discarding malformed Host message: ${cause instanceof Error ? cause.message : String(cause)}\n`)
+      }
+    }
+  })
+  return {
+    send: message => { child.stdin.write(`${JSON.stringify(message)}\n`) },
+    listen: receive => {
+      receivers.push(receive)
+      return () => {
+        const at = receivers.indexOf(receive)
+        if (at !== -1) receivers.splice(at, 1)
+      }
+    },
   }
 }
