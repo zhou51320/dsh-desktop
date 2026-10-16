@@ -7,6 +7,7 @@ import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@dee
 import { DESKTOP_PACKAGE_NAME as BIN_NAME } from './product-identity.ts'
 import { observeDesktopPreferenceSettings } from './settings-bridge.ts'
 import { installProfilePackageResolver } from './module-resolution.ts'
+import { installPluginMetadataResolverFallback } from './plugin-metadata-resolver.ts'
 import { DesktopPluginPackages } from './plugin-packages.ts'
 import { createDesktopWebProfile, listDesktopProfiles, canDeleteDesktopProfile, deleteDesktopProfile, selectDesktopProfile } from './profile-manager.ts'
 import { DesktopProfileService } from './profile-service.ts'
@@ -69,6 +70,7 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
   browserAccess: DesktopBrowserAccess, lanHttps: DesktopLanHttpsRuntime,
   bindHost: (host: DesktopStartupGenerationHost) => void, requestQuit: (code: number) => void,
 ): Promise<() => { aaRuntime: boolean; aaOnboarding: boolean }> {
+  installPluginMetadataResolverFallback()
   const { prepared, profilePreferences, homeDir, activeProfileName, pluginManagementStatePath,
     selectionStatePath, marketUserDataDir, releaseUserDataLocations, desktopLaunchEnvironment,
     desktopPnpmBootstrap } = options
@@ -124,10 +126,10 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
       prepared.patches,
       async (hostCtx) => {
         profileBoot.prepare(hostCtx)
-        // Keep the Node internal module resolver available. Recent upstream
-        // plugin metadata reads use ModuleLoader.fromInternal() to resolve
-        // exported icons/locales; clearing it makes every plugin appear
-        // broken even though the profile overlay hooks are installed below.
+        // Plugin execution must use the public profile resolver.  On the
+        // Win7 Node runtime, the private loader reaches an ABI-specific addon;
+        // metadata reads use the public fallback installed above instead.
+        hostCtx.loader.internal = undefined
         bindHost(hostCtx)
         hostCtx.effect(() => () => logSink.close(), 'dsh-plugin-desktop: Host log sink')
         hostCtx.effect(

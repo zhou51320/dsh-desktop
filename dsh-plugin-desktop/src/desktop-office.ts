@@ -26,10 +26,8 @@ export const PRIMARY_RUNTIME_INSTALL_NAME = `${DESKTOP_PACKAGE_NAME}-primary-run
 
 /**
  * Create the Windows command wrapper used to run Office's JavaScript CLI
- * through Electron's embedded Node runtime. The wrapper is installed below
- * the writable runtime root because the packaged resources directory may be
- * read-only. This avoids shipping a second standalone Node executable on
- * Win7 while preserving the skill-office contract of an executable path.
+ * through Electron's embedded Node runtime. Deprecated: packaged Windows 7
+ * Hosts run Office through the bundled standalone Node instead.
  */
 export function ensureElectronNodeShim(root: string, executable: string, platform: NodeJS.Platform = process.platform): string | undefined {
   if (platform !== 'win32') return undefined
@@ -104,9 +102,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // Stable and Beta ship no archive, so the CLI runs from its installed package under the bundled standalone Node.
   const packageRoot = dirname(fileURLToPath(import.meta.resolve('@deepseek-ai/libreoffice-kit/package.json')))
   const bundledNode = join(config.source, 'dependencies', 'node', 'bin', process.platform === 'win32' ? 'node.exe' : 'node')
-  const node = process.platform === 'win32' && existsSync(bundledNode)
-    ? bundledNode
-    : process.platform === 'win32' ? ensureElectronNodeShim(config.root, process.execPath) ?? process.execPath : bundledNode
+  // The packaged Host is an ordinary standalone Node process. Never route an
+  // Office CLI back through Electron: Electron's embedded Node ABI is not the
+  // ABI used to install or load Desktop plugins on Windows 7.
+  const node = existsSync(bundledNode) ? bundledNode : process.execPath
   await ctx.plugin(officeSkills, {
     assetRoot: join(dirname(config.source), 'office-skills'),
     node,
