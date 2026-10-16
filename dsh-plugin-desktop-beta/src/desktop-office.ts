@@ -24,7 +24,13 @@ export interface Config {
  */
 export const PRIMARY_RUNTIME_INSTALL_NAME = `${DESKTOP_PACKAGE_NAME}-primary-runtime`
 
-/** Create a writable Windows wrapper that executes Office CLI through Electron RunAsNode. */
+/**
+ * Create the Windows command wrapper used to run Office's JavaScript CLI
+ * through Electron's embedded Node runtime. The wrapper is installed below
+ * the writable runtime root because the packaged resources directory may be
+ * read-only. This avoids shipping a second standalone Node executable on
+ * Win7 while preserving the skill-office contract of an executable path.
+ */
 export function ensureElectronNodeShim(root: string, executable: string, platform: NodeJS.Platform = process.platform): string | undefined {
   if (platform !== 'win32') return undefined
   const directory = join(root, 'bin')

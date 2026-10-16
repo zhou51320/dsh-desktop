@@ -1702,7 +1702,7 @@ async function start(): Promise<void> {
         prepared.patches,
         async (hostCtx) => {
           profileBoot.prepare(hostCtx)
-          // Keep the Node internal module resolver available. Recent upstream
+          // Keep the Node internal module resolver available.  Recent upstream
           // plugin metadata reads use ModuleLoader.fromInternal() to resolve
           // exported icons/locales; clearing it makes every plugin appear
           // broken even though the profile overlay hooks are installed below.
