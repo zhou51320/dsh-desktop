@@ -10,7 +10,7 @@ import {
   createLaunchEnvironmentSnapshot,
   DSH_LAUNCH_ENVIRONMENT_KEY,
 } from '@deepseek-ai/dsh-launch-environment'
-import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
+import { installDesktopPnpmRuntime, nodeRuntimeVersion } from '../lib/desktop-runtime-environment.js'
 import { installProfilePackageResolver } from '../lib/module-resolution.js'
 import { installPluginMetadataResolverFallback } from '../lib/plugin-metadata-resolver.js'
 import { prepareDesktopProfile } from '../lib/profile.js'
@@ -72,12 +72,11 @@ try {
   const launchPath = launchEnvironment.get('PATH')?.value
   const packageRoot = new URL('../', import.meta.url)
   const pnpmBinPath = fileURLToPath(new URL('node_modules/pnpm/bin/pnpm.mjs', packageRoot))
-  const electronVersion = JSON.parse(readFileSync(new URL('node_modules/electron/package.json', packageRoot), 'utf8')).version
   pnpmRuntime = installDesktopPnpmRuntime({
     platform: process.platform,
     appExecutable: process.execPath,
     pnpmBinPath,
-    electronVersion,
+    nodeVersion: nodeRuntimeVersion(process.execPath),
     stateDir: join(home, 'runtime-commands'),
     environment: process.env,
   })
