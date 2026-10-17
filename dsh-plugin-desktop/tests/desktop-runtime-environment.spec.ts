@@ -18,6 +18,7 @@ import { basename, delimiter as pathDelimiter, dirname, join, resolve } from 'no
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  bundledNodeExecutable,
   installDesktopDshRuntime,
   installDesktopPnpmRuntime,
   type DesktopPnpmRuntimeOptions,
@@ -80,6 +81,19 @@ afterEach(() => {
 })
 
 describe('desktop Host pnpm runtime', () => {
+  it('uses the architecture-specific packaged Node runtime, with a legacy flat-layout fallback', () => {
+    const resources = temporaryDirectory()
+    const x64Node = join(resources, 'runtime', 'x64', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe')
+    mkdirSync(dirname(x64Node), { recursive: true })
+    writeFileSync(x64Node, '')
+    expect(bundledNodeExecutable(resources, 'win32', 'x64')).toBe(x64Node)
+
+    rmSync(join(resources, 'runtime', 'x64'), { recursive: true })
+    expect(bundledNodeExecutable(resources, 'win32', 'x64')).toBe(join(
+      resources, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe',
+    ))
+  })
+
   it.each(['darwin', 'linux'] as const)('creates a pnpm-only public PATH on %s', (platform) => {
     const stateDir = join(temporaryDirectory(), 'runtime state')
     const environment: NodeJS.ProcessEnv = {

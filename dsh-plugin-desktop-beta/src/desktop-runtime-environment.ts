@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   chmodSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -33,10 +34,20 @@ const GENERATION_NAME = /^(?<hash>[0-9a-f]{64})-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-
 const MANIFEST_NAME = '.generation.json'
 
 /** Resolve the real Node executable shipped beside a packaged desktop application. */
-export function bundledNodeExecutable(resourcesPath: string | undefined): string {
+export function bundledNodeExecutable(
+  resourcesPath: string | undefined,
+  platform = process.platform,
+  arch = process.arch,
+): string {
   if (resourcesPath === undefined || resourcesPath.length === 0) return process.execPath
-  return join(resourcesPath, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin',
-    process.platform === 'win32' ? 'node.exe' : 'node')
+  const executable = platform === 'win32' ? 'node.exe' : 'node'
+  // Runtime preparation installs one payload per CPU under runtime/<arch>.  The former
+  // flat path was never emitted by the packaged Win7 build, so Electron failed before
+  // the main window could initialize.
+  const architecturePath = join(resourcesPath, 'runtime', arch, 'primary-runtime', 'dependencies', 'node', 'bin', executable)
+  if (existsSync(architecturePath)) return architecturePath
+  // Keep compatibility with early development/legacy packages which used a flat layout.
+  return join(resourcesPath, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', executable)
 }
 
 const nodeRuntimeVersions = new Map<string, string>()
@@ -46,6 +57,7 @@ export function nodeRuntimeVersion(appExecutable: string): string {
   const cached = nodeRuntimeVersions.get(appExecutable)
   if (cached !== undefined) return cached
   let version = appExecutable === process.execPath ? process.version : ''
+  let failureDetail = ''
   if (version.length === 0) {
     const result = spawnSync(appExecutable, ['--version'], {
       encoding: 'utf8', timeout: 10_000, windowsHide: true,
@@ -53,11 +65,14 @@ export function nodeRuntimeVersion(appExecutable: string): string {
     const reported = (result.stdout ?? '').trim()
     if (result.error === undefined && result.status === 0 && /^v\d+\.\d+\.\d+/u.test(reported)) {
       version = reported
+    } else {
+      failureDetail = String(result.error?.message ?? result.stderr ?? result.status ?? 'unknown error').trim()
     }
   }
   version = version.replace(/^v/u, '')
   if (version.length === 0) {
-    throw new Error(`dsh-plugin-desktop: cannot determine the Node runtime version of ${appExecutable}`)
+    const detail = failureDetail === '' ? '' : ` (run --version failed: ${failureDetail})`
+    throw new Error(`dsh-plugin-desktop: cannot determine the Node runtime version of ${appExecutable}${detail}`)
   }
   nodeRuntimeVersions.set(appExecutable, version)
   return version
